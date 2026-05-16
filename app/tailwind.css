@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body { 
+    background: #0F1117; 
+    color: #F0F0F5; 
+    font-family: 'Inter', system-ui, sans-serif; 
+    -webkit-font-smoothing: antialiased; 
+  }
+  
+  /* scrollbar */
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: #2E3148; border-radius: 6px; }
+  *::-webkit-scrollbar-thumb:hover { background: #3a3e58; }
+  
+  /* hide number-input spinners */
+  input[type=number]::-webkit-inner-spin-button, 
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+  
+  /* checkbox custom */
+  .rf-check { 
+    appearance: none; 
+    width: 16px; 
+    height: 16px; 
+    border: 1.5px solid #3a3e58; 
+    border-radius: 4px; 
+    background: #1A1D27; 
+    cursor: pointer; 
+    display: inline-grid; 
+    place-content: center; 
+  }
+  .rf-check:checked { background: #6C63FF; border-color: #6C63FF; }
+  .rf-check:checked::after { 
+    content: ''; 
+    width: 10px; 
+    height: 10px; 
+    background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>") center/contain no-repeat; 
+  }
+  
+  /* selection */
+  ::selection { background: #6C63FF55; }
+}

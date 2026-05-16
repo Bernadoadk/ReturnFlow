@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ReturnFlow — Returns management for Shopify</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          colors: {
+            bg:       '#0F1117',
+            surface:  '#1A1D27',
+            elevated: '#222536',
+            border:   '#2E3148',
+            divider:  '#262A3A',
+            ink:      '#F0F0F5',
+            muted:    '#8B8FA8',
+            faint:    '#5B5F75',
+            accent:   '#6C63FF',
+            accent2:  '#8B85FF',
+            ok:       '#22C55E',
+            warn:     '#F59E0B',
+            danger:   '#EF4444',
+            info:     '#3B82F6',
+            violet:   '#8B5CF6',
+          },
+          boxShadow: {
+            soft:  '0 1px 0 rgba(255,255,255,0.04) inset, 0 1px 2px rgba(0,0,0,0.4)',
+            pop:   '0 12px 32px rgba(0,0,0,0.55), 0 2px 4px rgba(0,0,0,0.4)',
+          },
+          keyframes: {
+            slideUp: { '0%': { transform: 'translateY(8px)', opacity: 0 }, '100%': { transform: 'translateY(0)', opacity: 1 } },
+            fadeIn:  { '0%': { opacity: 0 }, '100%': { opacity: 1 } },
+            pulseSoft: { '0%,100%': { opacity: 1 }, '50%': { opacity: .55 } },
+          },
+          animation: {
+            slideUp: 'slideUp .25s ease-out both',
+            fadeIn:  'fadeIn .2s ease-out both',
+            pulseSoft: 'pulseSoft 2s ease-in-out infinite',
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    html, body, #root { height: 100%; }
+    body { background: #0F1117; color: #F0F0F5; font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    /* scrollbar */
+    *::-webkit-scrollbar { width: 10px; height: 10px; }
+    *::-webkit-scrollbar-track { background: transparent; }
+    *::-webkit-scrollbar-thumb { background: #2E3148; border-radius: 6px; }
+    *::-webkit-scrollbar-thumb:hover { background: #3a3e58; }
+    /* hide number-input spinners */
+    input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+    /* checkbox custom */
+    .rf-check { appearance: none; width: 16px; height: 16px; border: 1.5px solid #3a3e58; border-radius: 4px; background: #1A1D27; cursor: pointer; display: inline-grid; place-content: center; }
+    .rf-check:checked { background: #6C63FF; border-color: #6C63FF; }
+    .rf-check:checked::after { content: ''; width: 10px; height: 10px; background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>") center/contain no-repeat; }
+    /* selection */
+    ::selection { background: #6C63FF55; }
+  </style>
+
+  <!-- React + Babel -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <!-- Lucide icons (vanilla) -->
+  <script src="https://unpkg.com/lucide@0.452.0/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="mock-data.js"></script>
+  <script type="text/babel" src="ui.jsx"></script>
+  <script type="text/babel" src="dashboard.jsx"></script>
+  <script type="text/babel" src="returns.jsx"></script>
+  <script type="text/babel" src="detail.jsx"></script>
+  <script type="text/babel" src="analytics.jsx"></script>
+  <script type="text/babel" src="settings.jsx"></script>
+  <script type="text/babel" src="billing.jsx"></script>
+  <script type="text/babel" src="portal.jsx"></script>
+  <script type="text/babel" src="app.jsx"></script>
+</body>
+</html>

@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+// Paramètres de l'application (un par shop)
+model ShopSettings {
+  id                      String   @id @default(cuid())
+  shop                    String   @unique
+  returnWindow            Int      @default(30)
+  returnAddress           String   @default("Acme Store — Returns\n1450 Mission St, Suite 200\nSan Francisco, CA 94103\nUnited States")
+  autoApprove             Boolean  @default(false)
+  notifyMerchant          Boolean  @default(true)
+  fromEmail               String   @default("returns@acmestore.com")
+  allowStoreCredit        Boolean  @default(true)
+  allowExchanges          Boolean  @default(false)
+  storeCreditBonusPercent Int      @default(10)
+  incentivizeStoreCredit  Boolean  @default(false)
+  brandColor              String   @default("#6C63FF")
+  logoUrl                 String?
+  returnPolicy            String   @default("We want you to love what you buy. If something isn't quite right, here's how it works:\n\n· Returns are accepted within 30 days of delivery.\n· Items must be unworn, unwashed, and in original packaging.\n· Final-sale items (marked at checkout) cannot be returned.\n· Refunds are issued to the original payment method within 3–5 business days of receiving the returned item.\n\nTo start a return, head to our return portal with your order number and email. We'll email a prepaid label and you can drop it off at any location.\n\nQuestions? Email us — we usually reply within 1 business day.")
+  
+  // Custom reasons
+  reasons                 ReturnReason[]
+  // Demandes de retour
+  returnRequests          ReturnRequest[]
+  
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+// Raisons de retour disponibles pour un shop
+model ReturnReason {
+  id          String       @id @default(cuid())
+  shop        String
+  label       String
+  enabled     Boolean      @default(true)
+  
+  settings    ShopSettings @relation(fields: [shop], references: [shop], onDelete: Cascade)
+}
+
+// Une demande de retour faite par un client
+model ReturnRequest {
+  id              String         @id @default(cuid())
+  rma             String         @unique // e.g. RMA-2026-000012
+  shop            String
+  orderId         String         // Shopify Order ID
+  orderName       String         // e.g. #1089
+  customerEmail   String
+  customerName    String
+  customerPhone   String?
+  orderDate       DateTime
+  fulfilledDate   DateTime?
+  orderTotal      Float
+  
+  // PENDING, APPROVED, RECEIVED, REFUNDED, REJECTED
+  status          String         @default("PENDING")
+  
+  // ORIGINAL_PAYMENT, STORE_CREDIT, EXCHANGE
+  refundType      String         @default("ORIGINAL_PAYMENT")
+  refundAmount    Float          @default(0) // total amount of returned items
+  storeCreditBonus Float         @default(0) // bonus percent applied
+  
+  rejectionReason String?
+  labelUrl        String?
+  trackingNumber  String?
+  carrier         String?
+  
+  items           ReturnItem[]
+  notes           InternalNote[]
+  
+  settings        ShopSettings   @relation(fields: [shop], references: [shop], onDelete: Cascade)
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+// Un article dans une demande de retour
+model ReturnItem {
+  id              String        @id @default(cuid())
+  returnRequestId String
+  lineItemId      String?       // Shopify LineItem GID (for refund API)
+  productId       String        // Shopify Product ID
+  variantId       String        // Shopify Variant ID
+  name            String
+  variantName     String
+  quantity        Int
+  price           Float
+  reason          String
+  note            String?
+  imageUrl        String?
+
+  returnRequest   ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+}
+
+// Notes internes pour l'équipe sur une demande de retour
+model InternalNote {
+  id              String        @id @default(cuid())
+  returnRequestId String
+  author          String        // Name of the user/admin
+  text            String
+  
+  returnRequest   ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  
+  createdAt       DateTime      @default(now())
+}
+
+// Templates email personnalisables par shop
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  shop      String
+  type      String   // "Request Received" | "Approved" | "Rejected" | "Refunded"
+  subject   String
+  body      String
+  
+  @@unique([shop, type])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Abonnement Shopify Billing
+model BillingSubscription {
+  id                String   @id @default(cuid())
+  shop              String   @unique
+  plan              String   @default("free") // "free" | "starter" | "pro"
+  shopifyChargeId   String?  // Shopify recurring application charge ID
+  status            String   @default("active") // "active" | "cancelled" | "pending"
+  trialEndsAt       DateTime?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}

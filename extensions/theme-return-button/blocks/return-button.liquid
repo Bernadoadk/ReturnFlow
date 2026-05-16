@@ -1,0 +1,117 @@
+{% comment %} ReturnFlow — Return Button Block {% endcomment %}
+
+<div class="returnflow-return-block" style="margin: {{ block.settings.margin_top }}px 0 {{ block.settings.margin_bottom }}px;">
+  <div class="returnflow-banner" style="
+    background: {{ block.settings.banner_bg }};
+    border: 1px solid {{ block.settings.banner_border }};
+    border-radius: 8px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  ">
+    <div>
+      <div style="font-size: 14px; font-weight: 600; color: {{ block.settings.text_color }};">
+        {{ block.settings.title }}
+      </div>
+      <div style="font-size: 13px; color: {{ block.settings.subtitle_color }}; margin-top: 2px;">
+        {{ block.settings.subtitle }}
+      </div>
+    </div>
+    <a href="/apps/returns" style="
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: {{ block.settings.button_color }};
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 9px 18px;
+      border-radius: 6px;
+      text-decoration: none;
+      white-space: nowrap;
+    ">
+      {{ block.settings.button_label }}
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14M12 5l7 7-7 7"/>
+      </svg>
+    </a>
+  </div>
+</div>
+
+{% schema %}
+{
+  "name": "Return Button",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Title",
+      "default": "Need to return an item?"
+    },
+    {
+      "type": "text",
+      "id": "subtitle",
+      "label": "Subtitle",
+      "default": "Start a return or exchange in just a few steps."
+    },
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "Button label",
+      "default": "Start a Return"
+    },
+    {
+      "type": "color",
+      "id": "button_color",
+      "label": "Button color",
+      "default": "#6C63FF"
+    },
+    {
+      "type": "color",
+      "id": "banner_bg",
+      "label": "Banner background",
+      "default": "#F5F5FF"
+    },
+    {
+      "type": "color",
+      "id": "banner_border",
+      "label": "Banner border color",
+      "default": "#E0DEFF"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Title color",
+      "default": "#111111"
+    },
+    {
+      "type": "color",
+      "id": "subtitle_color",
+      "label": "Subtitle color",
+      "default": "#666666"
+    },
+    {
+      "type": "range",
+      "id": "margin_top",
+      "label": "Margin top (px)",
+      "min": 0,
+      "max": 60,
+      "step": 4,
+      "default": 16
+    },
+    {
+      "type": "range",
+      "id": "margin_bottom",
+      "label": "Margin bottom (px)",
+      "min": 0,
+      "max": 60,
+      "step": 4,
+      "default": 16
+    }
+  ]
+}
+{% endschema %}
