@@ -40,7 +40,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
   const templates = await prisma.emailTemplate.findMany({ where: { shop } });
 
-  return { settings, templates };
+  return { settings, templates, shop };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -104,7 +104,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function SettingsPage() {
-  const { settings, templates } = useLoaderData<typeof loader>();
+  const { settings, templates, shop } = useLoaderData<typeof loader>();
   const [tab, setTab] = useState('General');
   
   const tabs = [
@@ -137,7 +137,7 @@ export default function SettingsPage() {
       {tab === 'General'  && <GeneralTab settings={settings} />}
       {tab === 'Reasons'  && <ReasonsTab settings={settings} />}
       {tab === 'Emails'   && <EmailsTab templates={templates} />}
-      {tab === 'Branding' && <BrandingTab settings={settings} />}
+      {tab === 'Branding' && <BrandingTab settings={settings} shop={shop} />}
       {tab === 'Policy'   && <PolicyTab settings={settings} />}
     </div>
   );
@@ -511,7 +511,7 @@ function EmailsTab({ templates }: any) {
 }
 
 // ---- Branding tab ----
-function BrandingTab({ settings }: any) {
+function BrandingTab({ settings, shop }: any) {
   const submit = useSubmit();
   const navigation = useNavigation();
   const toast = useToast();
@@ -578,7 +578,7 @@ function BrandingTab({ settings }: any) {
         </SettingRow>
 
         <div className="pt-2">
-          <a href="/portal" target="_blank" rel="noreferrer">
+          <a href={`https://${shop}/apps/returns`} target="_blank" rel="noreferrer">
             <Btn variant="secondary" icon="ExternalLink">Preview Portal</Btn>
           </a>
         </div>
