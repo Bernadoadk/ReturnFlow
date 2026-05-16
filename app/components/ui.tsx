@@ -11,11 +11,13 @@ export function Icon({ name, size = 16, className = '', strokeWidth = 2, style }
 
 // ---- Status badge ----
 export const STATUS_STYLES: Record<string, any> = {
-  PENDING:  { bg: 'rgba(245,158,11,0.12)', text: '#F59E0B', dot: '#F59E0B' },
-  APPROVED: { bg: 'rgba(59,130,246,0.12)', text: '#3B82F6', dot: '#3B82F6' },
-  RECEIVED: { bg: 'rgba(139,92,246,0.12)', text: '#8B5CF6', dot: '#8B5CF6' },
-  REFUNDED: { bg: 'rgba(34,197,94,0.12)',  text: '#22C55E', dot: '#22C55E' },
-  REJECTED: { bg: 'rgba(239,68,68,0.12)',  text: '#EF4444', dot: '#EF4444' },
+  PENDING:  { bg: 'rgba(245,158,11,0.12)',  text: '#F59E0B', dot: '#F59E0B' },
+  APPROVED: { bg: 'rgba(59,130,246,0.12)',  text: '#3B82F6', dot: '#3B82F6' },
+  SHIPPED:  { bg: 'rgba(16,185,129,0.12)',  text: '#10B981', dot: '#10B981' },
+  RECEIVED: { bg: 'rgba(139,92,246,0.12)',  text: '#8B5CF6', dot: '#8B5CF6' },
+  REFUNDED: { bg: 'rgba(34,197,94,0.12)',   text: '#22C55E', dot: '#22C55E' },
+  REJECTED: { bg: 'rgba(239,68,68,0.12)',   text: '#EF4444', dot: '#EF4444' },
+  EXPIRED:  { bg: 'rgba(107,114,128,0.12)', text: '#6B7280', dot: '#6B7280' },
 };
 
 export function StatusBadge({ status, size = 'sm' }: any) {

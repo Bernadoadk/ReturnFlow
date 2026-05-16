@@ -208,10 +208,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           return { error: `Order not found. Please check your order number and email address.${devHint}` };
         }
 
+        // Fetch shop settings for blocklist + return window
+        const actionSettings = await prisma.shopSettings.findUnique({ where: { shop } });
+
+        // Parse blocklist from settings (comma-separated SKUs / product IDs)
+        const blockedSkusRaw = actionSettings?.blockedSkus ?? "";
+        const blockedList = blockedSkusRaw
+          .split(",")
+          .map((s: string) => s.trim().toLowerCase())
+          .filter(Boolean);
+
+        // Check if order is fulfilled (warn if not)
+        const isFulfilled = orderNode.displayFulfillmentStatus !== 'UNFULFILLED';
+
         const items = orderNode.lineItems.edges
           .filter((edge: any) => edge.node.product && edge.node.variant)
           .map((edge: any) => {
             const n = edge.node;
+            const productId = n.product.id?.toLowerCase() ?? "";
+            // Check if this item is blocked
+            const isBlocked = blockedList.some(
+              (b: string) => productId.includes(b) || (n.sku && n.sku.toLowerCase() === b)
+            );
             return {
               id: n.id,
               productId: n.product.id,
@@ -220,12 +238,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               variant: n.variantTitle || "Default Title",
               quantity: n.quantity,
               price: parseFloat(n.discountedTotalSet.shopMoney.amount) / n.quantity,
-              image: n.image?.url || null
+              image: n.image?.url || null,
+              blocked: isBlocked,
             };
           });
 
         // --- Return window validation ---
-        const returnWindow = settings?.returnWindow ?? 30;
+        const returnWindow = actionSettings?.returnWindow ?? 30;
         const orderDate = new Date(orderNode.createdAt);
         const daysSinceOrder = Math.floor((Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24));
         if (daysSinceOrder > returnWindow) {
@@ -246,6 +265,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             createdAt: orderNode.createdAt,
             customerName,
             orderTotal: parseFloat(orderNode.totalPriceSet.shopMoney.amount),
+            isFulfilled,
             items
           }
         };
@@ -264,10 +284,36 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const orderTotal = parseFloat(formData.get("orderTotal") as string) || 0;
     const refundType = formData.get("refundType") as string;
     const totalRefund = parseFloat(formData.get("totalRefund") as string);
+    const exchangeNote = (formData.get("exchangeNote") as string) || null;
     const selectedItemsStr = formData.get("selectedItems") as string;
     const selectedItems = JSON.parse(selectedItemsStr);
 
-    const rma = "RMA-" + new Date().getFullYear() + "-" + Math.floor(1000 + Math.random() * 9000);
+    // Blocklist check: reject if any selected item is blocked
+    const shopSettings2 = await prisma.shopSettings.findUnique({ where: { shop } });
+    if (shopSettings2?.blockedSkus) {
+      const blocked = shopSettings2.blockedSkus
+        .split(",")
+        .map((s: string) => s.trim().toLowerCase())
+        .filter(Boolean);
+      const blockedItem = selectedItems.find((it: any) =>
+        blocked.some(
+          (b: string) => it.productId?.toLowerCase().includes(b) || (it.sku && it.sku.toLowerCase() === b)
+        )
+      );
+      if (blockedItem) {
+        return { error: `"${blockedItem.name}" is not eligible for return. Please contact support for assistance.` };
+      }
+    }
+
+    const year = new Date().getFullYear();
+    const lastRma = await prisma.returnRequest.findFirst({
+      where: { shop, rma: { startsWith: `RMA-${year}-` } },
+      orderBy: { createdAt: 'desc' },
+      select: { rma: true }
+    });
+    const lastSeq = lastRma ? parseInt(lastRma.rma.split('-')[2] || '0', 10) : 0;
+    const nextSeq = (isNaN(lastSeq) ? 0 : lastSeq) + 1;
+    const rma = `RMA-${year}-${String(nextSeq).padStart(6, '0')}`;
 
     const returnRequest = await prisma.returnRequest.create({
       data: {
@@ -281,6 +327,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         orderTotal,
         refundType,
         refundAmount: totalRefund,
+        ...(exchangeNote && { exchangeNote }),
         items: {
           create: selectedItems.map((item: any) => ({
             lineItemId: item.lineItemId || null,
@@ -344,6 +391,44 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { success: true, rma: returnRequest.rma };
   }
 
+  if (intent === "submit_tracking") {
+    const rma = (formData.get("rma") as string).trim().toUpperCase();
+    const email = (formData.get("email") as string).trim().toLowerCase();
+    const carrier = (formData.get("carrier") as string).trim();
+    const trackingNumber = (formData.get("trackingNumber") as string).trim();
+
+    if (!rma || !email || !carrier || !trackingNumber) {
+      return { trackingError: "Please fill in all fields." };
+    }
+
+    const rr = await prisma.returnRequest.findFirst({
+      where: { shop, rma, customerEmail: email, status: 'APPROVED' },
+      include: { settings: { select: { fromEmail: true } } }
+    });
+
+    if (!rr) {
+      return { trackingError: "No approved return found with that RMA and email. Please check and try again." };
+    }
+
+    await prisma.returnRequest.update({
+      where: { id: rr.id },
+      data: { status: 'SHIPPED', shippedAt: new Date(), carrier, trackingNumber }
+    });
+
+    await sendReturnEmail("Shipped", {
+      to: rr.customerEmail,
+      shop,
+      fromEmail: (rr as any).settings?.fromEmail ?? undefined,
+      customer_name: rr.customerName || rr.customerEmail.split('@')[0],
+      rma_number: rr.rma,
+      order_number: rr.orderName,
+      carrier,
+      tracking_number: trackingNumber,
+    });
+
+    return { trackingSuccess: true, trackingRma: rma };
+  }
+
   return null;
 };
 
@@ -355,11 +440,13 @@ export default function PortalPage() {
   const [orderNum, setOrderNum] = useState('');
   const [email, setEmail] = useState('');
   const [orderData, setOrderData] = useState<any>(null);
-  const [selectedItems, setSelectedItems] = useState<Record<string, { qty: number }>>({}); 
-  const [reasons, setReasons] = useState<Record<string, string>>({});  
-  const [notes, setNotes] = useState<Record<string, string>>({});  
+  const [selectedItems, setSelectedItems] = useState<Record<string, { qty: number }>>({});
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
   const [refundType, setRefundType] = useState('ORIGINAL_PAYMENT');
+  const [exchangeNote, setExchangeNote] = useState('');
   const [submittedRma, setSubmittedRma] = useState<string | null>(null);
+  const [trackingSubmitted, setTrackingSubmitted] = useState(false);
 
   useEffect(() => {
     if (fetcher.data && fetcher.state === 'idle') {
@@ -370,6 +457,9 @@ export default function PortalPage() {
       }
       if (data.success && data.rma && step === 5) {
         setSubmittedRma(data.rma);
+      }
+      if (data.trackingSuccess) {
+        setTrackingSubmitted(true);
       }
     }
   }, [fetcher.data, fetcher.state, step]);
@@ -452,6 +542,7 @@ export default function PortalPage() {
       orderDate: orderData.createdAt,
       orderTotal: (orderData.orderTotal ?? totalRefund).toString(),
       refundType,
+      exchangeNote,
       totalRefund: totalRefund.toString(),
       selectedItems: JSON.stringify(itemsToSubmit)
     }, { method: 'POST' });
@@ -471,16 +562,21 @@ export default function PortalPage() {
         {step === 1 && (
           <StepFindOrder orderNum={orderNum} setOrderNum={setOrderNum} email={email} setEmail={setEmail}
                          onNext={handleFindOrder} canContinue={canContinue[1]} isLoading={fetcher.state !== 'idle'}
-                         error={(fetcher.data as any)?.error} shop={shop} />
+                         error={(fetcher.data as any)?.error} shop={shop}
+                         fetcher={fetcher} trackingSubmitted={trackingSubmitted}
+                         onTrackingReset={() => setTrackingSubmitted(false)} />
         )}
         {step === 2 && orderData && (
           <StepSelectItems items={orderData.items} orderName={orderData.name} date={orderData.createdAt}
+                           isFulfilled={orderData.isFulfilled}
                            selectedItems={selectedItems} setSelectedItems={setSelectedItems}
                            onBack={() => go(1)} onNext={() => canContinue[2] && go(3)} canContinue={canContinue[2]} />
         )}
         {step === 3 && (
           <StepReasons itemsList={itemsList} reasons={reasons} setReasons={setReasons}
                        notes={notes} setNotes={setNotes}
+                       exchangeNote={exchangeNote} setExchangeNote={setExchangeNote}
+                       refundType={refundType}
                        totalSteps={STEPS.length}
                        reasonOptions={(settings?.reasons ?? []).filter((r: any) => r.enabled).map((r: any) => r.label)}
                        onBack={() => go(prevFrom(3))} onNext={() => canContinue[3] && go(nextFrom(3))} canContinue={canContinue[3]} />
@@ -598,7 +694,38 @@ function PortalBtn({ variant = 'primary', children, full, onClick, disabled, ico
   );
 }
 
-function StepFindOrder({ orderNum, setOrderNum, email, setEmail, onNext, canContinue, isLoading, error, shop }: any) {
+function StepFindOrder({ orderNum, setOrderNum, email, setEmail, onNext, canContinue, isLoading, error, shop, fetcher, trackingSubmitted, onTrackingReset }: any) {
+  const [showTracking, setShowTracking] = useState(false);
+  const [tRma, setTRma] = useState('');
+  const [tEmail, setTEmail] = useState('');
+  const [tCarrier, setTCarrier] = useState('');
+  const [tTracking, setTTracking] = useState('');
+
+  const trackingError = (fetcher.data as any)?.trackingError;
+  const trackingLoading = fetcher.state !== 'idle' && showTracking;
+
+  const handleTrackingSubmit = () => {
+    fetcher.submit(
+      { intent: 'submit_tracking', rma: tRma, email: tEmail, carrier: tCarrier, trackingNumber: tTracking },
+      { method: 'POST' }
+    );
+  };
+
+  if (trackingSubmitted) {
+    return (
+      <div className="text-center py-8">
+        <div className="w-14 h-14 rounded-full grid place-content-center mx-auto mb-4" style={{ background: '#10B98115' }}>
+          <Icon name="Truck" size={28} style={{ color: '#10B981' }} />
+        </div>
+        <h2 className="text-[20px] font-bold text-[#0f1117]">Tracking submitted!</h2>
+        <p className="text-[13.5px] text-[#666] mt-2 max-w-xs mx-auto">Your carrier and tracking number have been saved. We'll update you when we receive your package.</p>
+        <button onClick={onTrackingReset} className="mt-6 text-[13px] font-semibold" style={{ color: '#6C63FF' }}>
+          Submit another return
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="text-[11.5px] uppercase tracking-wider text-[#888] mb-1.5 font-semibold">Step 1</div>
@@ -624,12 +751,46 @@ function StepFindOrder({ orderNum, setOrderNum, email, setEmail, onNext, canCont
           {isLoading ? 'Searching...' : 'Find Order'}
         </PortalBtn>
       </div>
+
+      {/* Tracking submission panel */}
+      <div className="mt-8 pt-6 border-t border-[#e6e6ec]">
+        <button onClick={() => setShowTracking(v => !v)}
+          className="w-full flex items-center justify-between text-[13px] font-medium text-[#444] hover:text-[#111] transition">
+          <span className="flex items-center gap-2">
+            <Icon name="Truck" size={15} />
+            Already shipped your return? Submit tracking
+          </span>
+          <Icon name={showTracking ? "ChevronUp" : "ChevronDown"} size={14} />
+        </button>
+
+        {showTracking && (
+          <div className="mt-4 p-4 rounded-xl border border-[#e6e6ec] bg-[#fafbfc] space-y-3">
+            {trackingError && (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-[12.5px] flex items-center gap-2">
+                <Icon name="TriangleAlert" size={13} /> {trackingError}
+              </div>
+            )}
+            <PortalInput label="Your RMA number" value={tRma} onChange={setTRma} placeholder="RMA-2026-000001" />
+            <PortalInput label="Email used at checkout" value={tEmail} onChange={setTEmail} placeholder="your@email.com" type="email" />
+            <PortalInput label="Carrier" value={tCarrier} onChange={setTCarrier} placeholder="UPS, FedEx, USPS…" />
+            <PortalInput label="Tracking number" value={tTracking} onChange={setTTracking} placeholder="1Z999AA1…" />
+            <div className="pt-1">
+              <PortalBtn onClick={handleTrackingSubmit}
+                disabled={!tRma || !tEmail.includes('@') || !tCarrier || !tTracking || trackingLoading}
+                icon="Truck">
+                {trackingLoading ? 'Submitting...' : 'Submit Tracking'}
+              </PortalBtn>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function StepSelectItems({ items, orderName, date, selectedItems, setSelectedItems, onBack, onNext, canContinue }: any) {
-  const toggleItem = (id: string) => {
+function StepSelectItems({ items, orderName, date, isFulfilled, selectedItems, setSelectedItems, onBack, onNext, canContinue }: any) {
+  const toggleItem = (id: string, blocked: boolean) => {
+    if (blocked) return;
     setSelectedItems((s: any) => {
       const next = { ...s };
       if (next[id]?.qty > 0) delete next[id];
@@ -637,7 +798,8 @@ function StepSelectItems({ items, orderName, date, selectedItems, setSelectedIte
       return next;
     });
   };
-  const setQty = (id: string, qty: number) => setSelectedItems((s: any) => ({ ...s, [id]: { qty: Math.max(1, qty) } }));
+  const setQty = (id: string, qty: number, max: number) =>
+    setSelectedItems((s: any) => ({ ...s, [id]: { qty: Math.max(1, Math.min(max, qty)) } }));
 
   return (
     <div>
@@ -647,20 +809,32 @@ function StepSelectItems({ items, orderName, date, selectedItems, setSelectedIte
         From order <span className="font-semibold text-[#0f1117]">{orderName}</span> · placed {new Date(date).toLocaleDateString()}.
       </p>
 
+      {!isFulfilled && (
+        <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-[13px] flex items-center gap-2">
+          <Icon name="TriangleAlert" size={14} />
+          This order hasn't been fulfilled yet. You can submit a return request, but it will be reviewed once the order ships.
+        </div>
+      )}
+
       <div className="mt-6 space-y-2">
         {items.map((item: any) => {
           const sel = !!selectedItems[item.id];
           const qty = selectedItems[item.id]?.qty || 1;
+          const blocked = !!item.blocked;
           return (
             <label key={item.id}
-                   className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition ${
-                     sel ? 'border-[#6C63FF] bg-[#6C63FF]/[0.04]' : 'border-[#e6e6ec] hover:border-[#cfd3df]'
+                   className={`flex items-center gap-4 p-4 rounded-xl border-2 transition ${
+                     blocked
+                       ? 'border-[#e6e6ec] opacity-50 cursor-not-allowed'
+                       : sel
+                       ? 'border-[#6C63FF] bg-[#6C63FF]/[0.04] cursor-pointer'
+                       : 'border-[#e6e6ec] hover:border-[#cfd3df] cursor-pointer'
                    }`}>
-              <input type="checkbox" checked={sel} onChange={() => toggleItem(item.id)} className="sr-only" />
+              <input type="checkbox" checked={sel} onChange={() => toggleItem(item.id, blocked)} className="sr-only" disabled={blocked} />
               <div className={`w-5 h-5 rounded-md grid place-content-center shrink-0 transition ${
-                sel ? 'bg-[#6C63FF]' : 'bg-white border-2 border-[#d8dce5]'
+                blocked ? 'bg-[#e6e6ec]' : sel ? 'bg-[#6C63FF]' : 'bg-white border-2 border-[#d8dce5]'
               }`}>
-                {sel && <Icon name="Check" size={12} className="text-white" strokeWidth={3.5} />}
+                {blocked ? <Icon name="Ban" size={11} className="text-[#999]" /> : sel && <Icon name="Check" size={12} className="text-white" strokeWidth={3.5} />}
               </div>
               <div className="w-16 h-16 rounded-lg grid place-content-center shrink-0 border border-[#e6e6ec] bg-[#f8fafc] overflow-hidden">
                 {item.image ? (
@@ -672,12 +846,13 @@ function StepSelectItems({ items, orderName, date, selectedItems, setSelectedIte
               <div className="flex-1 min-w-0">
                 <div className="text-[14px] font-semibold text-[#0f1117] truncate">{item.name}</div>
                 <div className="text-[12.5px] text-[#666] mt-0.5">{item.variant}</div>
+                {blocked && <div className="text-[11px] text-red-500 mt-0.5 font-medium">Not eligible for return</div>}
               </div>
-              {sel && (
+              {sel && !blocked && (
                 <div className="flex items-center gap-1 bg-white rounded-md border border-[#e6e6ec] overflow-hidden" onClick={e => e.preventDefault()}>
-                  <button onClick={() => setQty(item.id, qty - 1)} className="w-7 h-8 text-[#666] hover:bg-[#f0f0f5]">−</button>
+                  <button onClick={() => setQty(item.id, qty - 1, item.quantity)} className="w-7 h-8 text-[#666] hover:bg-[#f0f0f5]">−</button>
                   <span className="w-6 text-center text-[13px] font-semibold tabular-nums">{qty}</span>
-                  <button onClick={() => setQty(item.id, Math.min(item.quantity, qty + 1))} className="w-7 h-8 text-[#666] hover:bg-[#f0f0f5]">+</button>
+                  <button onClick={() => setQty(item.id, qty + 1, item.quantity)} className="w-7 h-8 text-[#666] hover:bg-[#f0f0f5]">+</button>
                 </div>
               )}
               <div className="text-[14px] font-semibold text-[#0f1117] tabular-nums w-16 text-right">${item.price.toFixed(2)}</div>
@@ -694,7 +869,7 @@ function StepSelectItems({ items, orderName, date, selectedItems, setSelectedIte
   );
 }
 
-function StepReasons({ itemsList, reasons, setReasons, notes, setNotes, onBack, onNext, canContinue, totalSteps, reasonOptions }: any) {
+function StepReasons({ itemsList, reasons, setReasons, notes, setNotes, exchangeNote, setExchangeNote, refundType, onBack, onNext, canContinue, totalSteps, reasonOptions }: any) {
   return (
     <div>
       <div className="text-[11.5px] uppercase tracking-wider text-[#888] mb-1.5 font-semibold">Step 3 of {totalSteps}</div>
@@ -739,6 +914,18 @@ function StepReasons({ itemsList, reasons, setReasons, notes, setNotes, onBack, 
           </div>
         ))}
       </div>
+
+      {refundType === 'EXCHANGE' && (
+        <div className="mt-4 p-4 rounded-xl border border-[#3B82F630] bg-[#3B82F608]">
+          <label className="block text-[12.5px] font-semibold text-[#3B82F6] mb-1 flex items-center gap-1.5">
+            <Icon name="RefreshCw" size={13} /> What would you like instead?
+          </label>
+          <p className="text-[12px] text-[#666] mb-2">Describe the item, size, or color you'd like us to send as a replacement.</p>
+          <textarea rows={2} value={exchangeNote} onChange={e => setExchangeNote(e.target.value)}
+            placeholder="e.g. Same shirt in Size M, Blue color"
+            className="w-full px-3.5 py-2.5 rounded-lg border border-[#d8dce5] bg-white text-[13px] resize-none focus:outline-none focus:border-[#3B82F6] focus:ring-4 focus:ring-[#3B82F6]/15 transition" />
+        </div>
+      )}
 
       <div className="mt-6 flex items-center justify-between">
         <PortalBtn variant="ghost" onClick={onBack} icon="ArrowLeft">Back</PortalBtn>

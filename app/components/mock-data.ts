@@ -110,7 +110,30 @@ It may take 3–5 business days to appear on your statement.
 
 Thanks for shopping with us.
 — Acme Store`,
-  }
+  },
+  'Shipped': {
+    subject: 'We got it — your return is on its way',
+    body: `Hi {{customer_name}},
+
+We've confirmed that your items for return {{rma_number}} are on their way back to us.
+
+Carrier: {{carrier}}
+Tracking: {{tracking_number}}
+
+We'll inspect them as soon as they arrive and notify you when your refund is processed.
+
+— Acme Store`,
+  },
+  'Expired': {
+    subject: 'Your return request has expired — {{rma_number}}',
+    body: `Hi {{customer_name}},
+
+Your return request {{rma_number}} for order {{order_number}} has expired because we didn't receive your shipment within the required timeframe.
+
+If you still need to return your items, please contact us and we'll do our best to help.
+
+— Acme Store`,
+  },
 };
 
 export const INVOICES = [

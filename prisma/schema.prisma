@@ -34,6 +34,8 @@ model ShopSettings {
   returnWindow            Int      @default(30)
   returnAddress           String   @default("Acme Store — Returns\n1450 Mission St, Suite 200\nSan Francisco, CA 94103\nUnited States")
   autoApprove             Boolean  @default(false)
+  autoExpireDays          Int      @default(7)
+  blockedSkus             String   @default("")
   notifyMerchant          Boolean  @default(true)
   fromEmail               String   @default("returns@acmestore.com")
   allowStoreCredit        Boolean  @default(true)
@@ -77,18 +79,20 @@ model ReturnRequest {
   fulfilledDate   DateTime?
   orderTotal      Float
   
-  // PENDING, APPROVED, RECEIVED, REFUNDED, REJECTED
+  // PENDING, APPROVED, SHIPPED, RECEIVED, REFUNDED, REJECTED, EXPIRED
   status          String         @default("PENDING")
-  
+
   // ORIGINAL_PAYMENT, STORE_CREDIT, EXCHANGE
   refundType      String         @default("ORIGINAL_PAYMENT")
-  refundAmount    Float          @default(0) // total amount of returned items
-  storeCreditBonus Float         @default(0) // bonus percent applied
-  
+  refundAmount    Float          @default(0)
+  storeCreditBonus Float         @default(0)
+
   rejectionReason String?
+  exchangeNote    String?   // Desired exchange item/size (when refundType = EXCHANGE)
   labelUrl        String?
   trackingNumber  String?
   carrier         String?
+  shippedAt       DateTime?
   
   items           ReturnItem[]
   notes           InternalNote[]

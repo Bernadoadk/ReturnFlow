@@ -52,16 +52,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (intent === "save_general") {
     await prisma.shopSettings.update({
       where: { shop },
-      data: { 
-        returnWindow: Number(formData.get("returnWindow")), 
-        returnAddress: formData.get("returnAddress") as string, 
-        autoApprove: formData.get("autoApprove") === "true", 
-        notifyMerchant: formData.get("notifyMerchant") === "true", 
-        fromEmail: formData.get("fromEmail") as string, 
-        allowStoreCredit: formData.get("allowStoreCredit") === "true", 
-        allowExchanges: formData.get("allowExchanges") === "true", 
-        storeCreditBonusPercent: Number(formData.get("storeCreditBonusPercent")), 
-        incentivizeStoreCredit: formData.get("incentivizeStoreCredit") === "true" 
+      data: {
+        returnWindow: Number(formData.get("returnWindow")),
+        returnAddress: formData.get("returnAddress") as string,
+        autoApprove: formData.get("autoApprove") === "true",
+        autoExpireDays: Number(formData.get("autoExpireDays")) || 7,
+        blockedSkus: formData.get("blockedSkus") as string || "",
+        notifyMerchant: formData.get("notifyMerchant") === "true",
+        fromEmail: formData.get("fromEmail") as string,
+        allowStoreCredit: formData.get("allowStoreCredit") === "true",
+        allowExchanges: formData.get("allowExchanges") === "true",
+        storeCreditBonusPercent: Number(formData.get("storeCreditBonusPercent")),
+        incentivizeStoreCredit: formData.get("incentivizeStoreCredit") === "true"
       }
     });
   } else if (intent === "save_reasons") {
@@ -175,6 +177,8 @@ function GeneralTab({ settings }: any) {
   const [returnWindow, setReturnWindow] = useState(settings.returnWindow);
   const [address, setAddress] = useState(settings.returnAddress);
   const [autoApprove, setAutoApprove] = useState(settings.autoApprove);
+  const [autoExpireDays, setAutoExpireDays] = useState(settings.autoExpireDays ?? 7);
+  const [blockedSkus, setBlockedSkus] = useState(settings.blockedSkus ?? "");
   const [notify, setNotify] = useState(settings.notifyMerchant);
   const [fromEmail, setFromEmail] = useState(settings.fromEmail);
   const [allowStoreCredit, setAllowStoreCredit] = useState(settings.allowStoreCredit);
@@ -194,6 +198,8 @@ function GeneralTab({ settings }: any) {
     formData.append("returnWindow", returnWindow.toString());
     formData.append("returnAddress", address);
     formData.append("autoApprove", autoApprove.toString());
+    formData.append("autoExpireDays", autoExpireDays.toString());
+    formData.append("blockedSkus", blockedSkus);
     formData.append("notifyMerchant", notify.toString());
     formData.append("fromEmail", fromEmail);
     formData.append("allowStoreCredit", allowStoreCredit.toString());
@@ -222,6 +228,24 @@ function GeneralTab({ settings }: any) {
         <Toggle checked={autoApprove} onChange={setAutoApprove}
                 label={autoApprove ? 'Returns are auto-approved' : 'Manual review required'}
                 description="Recommended off until your reason policy is tuned." />
+      </SettingRow>
+
+      <SettingRow label="Auto-expire approved returns" hint="Automatically expire approved returns if the customer hasn't shipped after this many days.">
+        <div className="flex items-center gap-2">
+          <input type="number" min={1} max={60} value={autoExpireDays} onChange={e => setAutoExpireDays(Math.max(1, +e.target.value))}
+            className="w-24 h-9 px-3 text-[13px] rounded-md bg-bg border border-border text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 text-center tabular-nums" />
+          <span className="text-[13px] text-muted">days after approval</span>
+        </div>
+      </SettingRow>
+
+      <SettingRow label="Blocked SKUs / product IDs" hint="Comma-separated list of SKUs or Shopify product IDs that cannot be returned. Leave empty to allow all.">
+        <Textarea
+          value={blockedSkus}
+          onChange={(e: any) => setBlockedSkus(e.target.value)}
+          rows={3}
+          placeholder="e.g. SALE-FINAL, SKU-001, gid://shopify/Product/123456789"
+        />
+        <div className="mt-1.5 text-[11.5px] text-faint">Customers will see an error if they try to return these items.</div>
       </SettingRow>
 
       <SettingRow label="Notify merchant" hint="Get an email each time a customer files a new return.">
@@ -307,6 +331,8 @@ function GeneralTab({ settings }: any) {
         setReturnWindow(settings.returnWindow);
         setAddress(settings.returnAddress);
         setAutoApprove(settings.autoApprove);
+        setAutoExpireDays(settings.autoExpireDays ?? 7);
+        setBlockedSkus(settings.blockedSkus ?? "");
         setNotify(settings.notifyMerchant);
         setFromEmail(settings.fromEmail);
         setAllowStoreCredit(settings.allowStoreCredit);

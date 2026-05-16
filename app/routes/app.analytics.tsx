@@ -19,7 +19,15 @@ function computePeriod(requests: any[], days: number) {
   });
 
   const total = filtered.length;
-  const totalRefunded = filtered.filter((r: any) => r.status === 'REFUNDED').reduce((s: number, r: any) => s + r.refundAmount, 0);
+  const refunded = filtered.filter((r: any) => r.status === 'REFUNDED');
+  const totalRefunded = refunded.reduce((s: number, r: any) => s + r.refundAmount, 0);
+
+  // Retained revenue = value that stayed in the store (store credit + exchange)
+  const retainedRevenue = refunded
+    .filter((r: any) => r.refundType === 'STORE_CREDIT' || r.refundType === 'EXCHANGE')
+    .reduce((s: number, r: any) => s + r.refundAmount, 0);
+  const retainedRatio = total > 0 ? Math.round((retainedRevenue / Math.max(totalRefunded + retainedRevenue, 1)) * 100) : 0;
+
   const closed = filtered.filter((r: any) => ['REFUNDED','REJECTED','RECEIVED'].includes(r.status));
   const avgProcessingDays = closed.length > 0
     ? closed.reduce((s: number, r: any) => s + (new Date(r.updatedAt).getTime() - new Date(r.createdAt).getTime()), 0) / closed.length / 86400000
@@ -43,7 +51,7 @@ function computePeriod(requests: any[], days: number) {
   }));
   const topProducts = Object.entries(productMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
 
-  return { total, totalRefunded: Math.round(totalRefunded * 100) / 100, avgProcessingDays: Math.round(avgProcessingDays * 10) / 10, exchangeRate, chart, topReasons, topProducts, totalItems };
+  return { total, totalRefunded: Math.round(totalRefunded * 100) / 100, retainedRevenue: Math.round(retainedRevenue * 100) / 100, retainedRatio, avgProcessingDays: Math.round(avgProcessingDays * 10) / 10, exchangeRate, chart, topReasons, topProducts, totalItems };
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -68,7 +76,7 @@ export default function AnalyticsPage() {
   const [period, setPeriod] = useState('30 days');
 
   const pd = period === '7 days' ? p7 : period === '90 days' ? p90 : p30;
-  const { total, totalRefunded, avgProcessingDays, exchangeRate, chart, topReasons, topProducts } = pd;
+  const { total, totalRefunded, retainedRevenue, retainedRatio, avgProcessingDays, exchangeRate, chart, topReasons, topProducts } = pd;
 
   const data = chart;
   const max = Math.max(...data, 1);
@@ -110,11 +118,26 @@ export default function AnalyticsPage() {
 
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <MiniKpi label="Total Returns"       value={String(total)}                  delta={total > 0 ? `all time` : 'No returns yet'} tone="muted" />
-        <MiniKpi label="Refund Amount"       value={`$${totalRefunded.toFixed(2)}`} delta="all refunds"     tone="ok" />
-        <MiniKpi label="Avg Processing Time" value={avgProcessingDays > 0 ? `${avgProcessingDays}d` : 'N/A'} delta="to close"       tone={avgProcessingDays > 3 ? 'warn' : 'ok'} />
-        <MiniKpi label="Exchange Rate"       value={`${exchangeRate}%`}             delta="of all returns"  tone="ok" />
+        <MiniKpi label="Total Returns"       value={String(total)}                        delta={total > 0 ? 'in period' : 'No returns yet'} tone="muted" />
+        <MiniKpi label="Refund Issued"       value={`$${totalRefunded.toFixed(2)}`}       delta="cash refunded"     tone={totalRefunded > 0 ? 'warn' : 'ok'} />
+        <MiniKpi label="Retained Revenue"    value={`$${retainedRevenue.toFixed(2)}`}     delta={`${retainedRatio}% of refunds`} tone="ok" />
+        <MiniKpi label="Exchange Rate"       value={`${exchangeRate}%`}                   delta="of all returns"  tone="ok" />
       </div>
+
+      {/* Retained revenue highlight */}
+      {retainedRevenue > 0 && (
+        <div className="flex items-center gap-3 px-5 py-3.5 rounded-lg border border-[#22C55E]/20 bg-[#22C55E]/5">
+          <div className="w-9 h-9 rounded-md grid place-content-center shrink-0" style={{ background: 'rgba(34,197,94,0.15)', color: '#22C55E' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-semibold text-ink">
+              <span style={{ color: '#22C55E' }}>${retainedRevenue.toFixed(2)}</span> retained via store credit &amp; exchanges
+            </div>
+            <div className="text-[12px] text-muted mt-0.5">Revenue that stayed in your store instead of going back to the customer.</div>
+          </div>
+        </div>
+      )}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">

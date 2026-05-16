@@ -43,14 +43,23 @@ export default function DashboardPage() {
   const { returnRequests, settings, shop } = useLoaderData<typeof loader>();
   const location = useLocation();
   
-  const pendingCount = returnRequests.filter((r: any) => r.status === 'PENDING').length;
+  const pendingCount  = returnRequests.filter((r: any) => r.status === 'PENDING').length;
   const approvedCount = returnRequests.filter((r: any) => r.status === 'APPROVED').length;
-  
+  const shippedCount  = returnRequests.filter((r: any) => r.status === 'SHIPPED').length;
+  const expiredCount  = returnRequests.filter((r: any) => r.status === 'EXPIRED').length;
+
   const now = new Date();
   const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const refundedThisMonth = returnRequests
     .filter((r: any) => r.status === 'REFUNDED' && new Date(r.updatedAt) >= firstDayOfMonth)
     .reduce((sum: number, r: any) => sum + r.refundAmount, 0);
+
+  const actionItems = [
+    ...(pendingCount > 0  ? [{ label: `${pendingCount} pending return${pendingCount > 1 ? 's' : ''} awaiting review`, icon: 'Clock',     color: '#F59E0B', link: '/app/returns?tab=Pending' }]  : []),
+    ...(approvedCount > 0 ? [{ label: `${approvedCount} approved — awaiting customer shipment`,                        icon: 'Package',   color: '#3B82F6', link: '/app/returns?tab=Approved' }] : []),
+    ...(shippedCount > 0  ? [{ label: `${shippedCount} package${shippedCount > 1 ? 's' : ''} in transit`,              icon: 'Truck',     color: '#10B981', link: '/app/returns?tab=Shipped' }]  : []),
+    ...(expiredCount > 0  ? [{ label: `${expiredCount} return${expiredCount > 1 ? 's' : ''} expired — no action needed`, icon: 'TimerOff', color: '#6B7280', link: '/app/returns?tab=Expired' }]  : []),
+  ];
 
   const recent = returnRequests.slice(0, 5).map((r: any) => ({
     rma: r.rma,
@@ -100,11 +109,40 @@ export default function DashboardPage() {
 
       {/* KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <KpiCard label="Pending Review"      value={pendingCount}     sub="Requires action"   subTone="warn" icon="Clock"      accentColor="#F59E0B" />
-        <KpiCard label="Approved"            value={approvedCount}    sub="Awaiting items"    subTone="muted" icon="CircleCheck" accentColor="#3B82F6" />
-        <KpiCard label="Refunded This Month" value={`$${refundedThisMonth.toFixed(2)}`} sub="Total value"    subTone="ok"   icon="DollarSign" accentColor="#22C55E" />
-        <KpiCard label="Total Returns"       value={returnRequests.length} sub="All time"        subTone="ok"   icon="TrendingDown" accentColor="#6C63FF" />
+        <KpiCard label="Pending Review"      value={pendingCount}     sub="Requires action"   subTone="warn"  icon="Clock"        accentColor="#F59E0B" />
+        <KpiCard label="In Transit"          value={shippedCount}     sub="Awaiting receipt"  subTone="ok"    icon="Truck"        accentColor="#10B981" />
+        <KpiCard label="Refunded This Month" value={`$${refundedThisMonth.toFixed(2)}`} sub="Total value" subTone="ok" icon="DollarSign" accentColor="#22C55E" />
+        <KpiCard label="Total Returns"       value={returnRequests.length} sub="All time"     subTone="muted" icon="TrendingDown"  accentColor="#6C63FF" />
       </div>
+
+      {/* Action items (AfterShip-style to-do) */}
+      {actionItems.length > 0 && (
+        <div className="bg-surface border border-border rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-6 h-6 rounded-md grid place-content-center" style={{ background: '#F59E0B18', color: '#F59E0B' }}>
+              <Icon name="ListChecks" size={13} />
+            </div>
+            <span className="text-[13px] font-semibold text-ink">Action items</span>
+            <span className="ml-auto text-[11.5px] px-2 py-0.5 rounded-full font-semibold"
+                  style={{ background: 'rgba(245,158,11,0.12)', color: '#F59E0B' }}>
+              {actionItems.length}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {actionItems.map((item, i) => (
+              <Link key={i} to={`${item.link}${location.search ? location.search : ''}`}
+                    className="flex items-center gap-3 p-3 rounded-lg hover:bg-white/[0.04] transition-colors group">
+                <div className="w-7 h-7 rounded-md grid place-content-center shrink-0"
+                     style={{ background: item.color + '18', color: item.color }}>
+                  <Icon name={item.icon} size={14} />
+                </div>
+                <span className="text-[13px] text-muted group-hover:text-ink transition-colors flex-1">{item.label}</span>
+                <Icon name="ArrowRight" size={13} className="text-faint group-hover:text-muted transition-colors" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Recent returns */}
       <Card

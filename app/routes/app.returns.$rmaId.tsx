@@ -49,11 +49,11 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         ...(reason && { rejectionReason: reason }),
         ...(carrier && { carrier }),
         ...(trackingNumber && { trackingNumber }),
-        ...(labelUrl && { labelUrl })
+        ...(labelUrl && { labelUrl }),
+        ...(status === 'SHIPPED' && { shippedAt: new Date() }),
       }
     });
 
-    // Send email
     if (status === 'APPROVED') {
       await sendReturnEmail("Approved", {
         to: rr.customerEmail,
@@ -63,6 +63,16 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         order_number: rr.orderName,
         refund_amount: `$${rr.refundAmount.toFixed(2)}`,
         label_url: labelUrl || undefined
+      });
+    } else if (status === 'SHIPPED') {
+      await sendReturnEmail("Shipped", {
+        to: rr.customerEmail,
+        fromEmail: rr.settings?.fromEmail,
+        customer_name: rr.customerName || rr.customerEmail.split('@')[0],
+        rma_number: rr.rma,
+        order_number: rr.orderName,
+        carrier: carrier || 'N/A',
+        tracking_number: trackingNumber || 'N/A',
       });
     } else if (status === 'REJECTED') {
       await sendReturnEmail("Rejected", {
@@ -88,9 +98,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     let storeCreditCode: string | null = null;
 
     if (refundMethod === 'ORIGINAL_PAYMENT') {
-      // --- Real Shopify refund via refundCreate ---
       try {
-        // 1. Fetch order transactions to get the parent transaction ID
         const orderRes = await admin.graphql(`#graphql
           query GetOrderTransactions($id: ID!) {
             order(id: $id) {
@@ -110,25 +118,17 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         const order = orderData.data?.order;
 
         if (order) {
-          // Find the original SALE transaction
           const saleTx = order.transactions?.find(
             (t: any) => (t.kind === 'SALE' || t.kind === 'CAPTURE') && t.status === 'SUCCESS'
           );
-
-          // Build refundLineItems — match our stored items to Shopify line items by variantId
           const shopifyLineItems: any[] = order.lineItems?.edges?.map((e: any) => e.node) || [];
           const refundLineItems = rr.items
             .map((it: any) => {
-              // Try lineItemId first, fallback to variantId match
               let shopifyItem = it.lineItemId
                 ? shopifyLineItems.find((li: any) => li.id === it.lineItemId)
                 : shopifyLineItems.find((li: any) => li.variant?.id === it.variantId);
               if (!shopifyItem) return null;
-              return {
-                lineItemId: shopifyItem.id,
-                quantity: it.quantity,
-                restockType: "RETURN"
-              };
+              return { lineItemId: shopifyItem.id, quantity: it.quantity, restockType: "RETURN" };
             })
             .filter(Boolean);
 
@@ -154,17 +154,13 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
             const refundData = await refundRes.json();
             const userErrors = refundData.data?.refundCreate?.userErrors || [];
             if (userErrors.length > 0) {
-              console.error("[refund] Shopify refundCreate errors:", JSON.stringify(userErrors));
               return { error: `Shopify refund error: ${userErrors.map((e: any) => e.message).join(', ')}` };
             }
-            console.log("[refund] Shopify refund created:", refundData.data?.refundCreate?.refund?.id);
           } else {
-            // No matching transaction or line items — log but don't block
-            console.warn("[refund] Could not match transaction/line items for automatic refund. Marking manually.");
+            console.warn("[refund] Could not match transaction/line items. Marking manually.");
           }
         }
       } catch (e: any) {
-        console.error("[refund] refundCreate exception:", e?.message || e);
         return { error: `Failed to issue refund: ${e?.message || 'unknown error'}` };
       }
 
@@ -203,14 +199,11 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         const userErrors = discountData.data?.discountCodeBasicCreate?.userErrors || [];
         if (userErrors.length === 0) {
           storeCreditCode = discountData.data?.discountCodeBasicCreate?.codeDiscountNode?.codeDiscount?.codes?.edges?.[0]?.node?.code || discountCode;
-        } else {
-          console.error("[refund] Discount code errors:", JSON.stringify(userErrors));
         }
       } catch (e) {
         console.error("[refund] Failed to create discount code", e);
       }
     }
-    // EXCHANGE: no monetary refund, handled manually by merchant
 
     await prisma.returnRequest.update({
       where: { rma: rmaId, shop },
@@ -233,11 +226,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     const rr = await prisma.returnRequest.findUnique({ where: { rma: rmaId, shop } });
     if (rr) {
       await prisma.internalNote.create({
-        data: {
-          returnRequestId: rr.id,
-          text,
-          author: "Admin"
-        }
+        data: { returnRequestId: rr.id, text, author: "Admin" }
       });
     }
   }
@@ -256,12 +245,21 @@ export default function ReturnDetailPage() {
   const [approveOpen, setApproveOpen] = useState(false);
   const [rejectOpen,  setRejectOpen]  = useState(false);
   const [refundOpen,  setRefundOpen]  = useState(false);
+  const [shipOpen,    setShipOpen]    = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [internalNote, setInternalNote] = useState('');
   const [overrideMethod, setOverrideMethod] = useState(false);
   const [refundMethod, setRefundMethod] = useState(r.refundType || 'ORIGINAL_PAYMENT');
   const [refundAmountStr, setRefundAmountStr] = useState((r.refundAmount || 0).toFixed(2));
-  
+
+  const [carrier, setCarrier] = useState('');
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [labelUrl, setLabelUrl] = useState('');
+
+  // Ship modal state (when merchant manually marks as shipped)
+  const [shipCarrier, setShipCarrier] = useState('');
+  const [shipTracking, setShipTracking] = useState('');
+
   useEffect(() => {
     if (fetcher.data && fetcher.state === 'idle') {
       const data = fetcher.data as any;
@@ -273,11 +271,14 @@ export default function ReturnDetailPage() {
         const status = fd?.get("status");
         if (status === 'APPROVED') {
           setApproveOpen(false);
-          toast({ kind: 'success', title: 'Return approved', body: `${r.rma} — shipping label dispatched.` });
+          toast({ kind: 'success', title: 'Return approved', body: `${r.rma} — shipping instructions sent.` });
         } else if (status === 'REJECTED') {
           setRejectOpen(false);
           setRejectReason('');
           toast({ kind: 'error', title: 'Return rejected', body: 'Customer has been notified.' });
+        } else if (status === 'SHIPPED') {
+          setShipOpen(false);
+          toast({ kind: 'success', title: 'Marked as shipped', body: 'Waiting for arrival at warehouse.' });
         } else if (status === 'RECEIVED') {
           toast({ kind: 'success', title: 'Marked as received', body: 'Refund queue updated.' });
         }
@@ -285,6 +286,8 @@ export default function ReturnDetailPage() {
         setRefundOpen(false);
         const methodLabel = REFUND_TYPES[refundMethod as string]?.label || 'Refund';
         toast({ kind: 'success', title: 'Refund issued', body: `${methodLabel} — $${parseFloat(refundAmountStr || '0').toFixed(2)} to ${r.customerName}.` });
+      } else if (data.error) {
+        toast({ kind: 'error', title: 'Error', body: (fetcher.data as any).error });
       }
     }
   }, [fetcher.data, fetcher.state, fetcher.formData, r.rma, r.customerName, refundMethod, refundAmountStr, toast]);
@@ -292,26 +295,27 @@ export default function ReturnDetailPage() {
   const itemsTotal = r.items.reduce((s: number, it: any) => s + it.price * it.quantity, 0);
   const restocking = 0;
   const refund = itemsTotal - restocking;
+
   const isPending  = r.status === 'PENDING';
   const isApproved = r.status === 'APPROVED';
+  const isShipped  = r.status === 'SHIPPED';
   const isReceived = r.status === 'RECEIVED';
-
-  const [carrier, setCarrier] = useState('');
-  const [trackingNumber, setTrackingNumber] = useState('');
-  const [labelUrl, setLabelUrl] = useState('');
+  const isClosed   = ['REFUNDED', 'REJECTED', 'EXPIRED'].includes(r.status);
 
   const handleApprove = () => {
     fetcher.submit({
-      intent: 'update_status',
-      status: 'APPROVED',
-      carrier,
-      trackingNumber,
-      labelUrl
+      intent: 'update_status', status: 'APPROVED', carrier, trackingNumber, labelUrl
     }, { method: 'POST' });
   };
   const handleReject = () => {
     if (!rejectReason.trim()) return;
     fetcher.submit({ intent: 'update_status', status: 'REJECTED', reason: rejectReason }, { method: 'POST' });
+  };
+  const handleMarkShipped = () => {
+    fetcher.submit({
+      intent: 'update_status', status: 'SHIPPED',
+      carrier: shipCarrier, trackingNumber: shipTracking
+    }, { method: 'POST' });
   };
   const handleMarkReceived = () => {
     fetcher.submit({ intent: 'update_status', status: 'RECEIVED' }, { method: 'POST' });
@@ -321,7 +325,6 @@ export default function ReturnDetailPage() {
     if (r.refundType === 'STORE_CREDIT' && r.settings.incentivizeStoreCredit) {
       creditTotal = refund * (1 + r.settings.storeCreditBonusPercent / 100);
     }
-    
     setRefundMethod(r.refundType || 'ORIGINAL_PAYMENT');
     setOverrideMethod(false);
     setRefundAmountStr(creditTotal.toFixed(2));
@@ -335,20 +338,27 @@ export default function ReturnDetailPage() {
     fetcher.submit({ intent: 'add_note', text: internalNote.trim() }, { method: 'POST' });
   };
 
-  const timeline = [
-    { kind: 'request', title: 'Return Requested', detail: 'Customer submitted return request', time: new Date(r.createdAt).toLocaleString(), icon: 'PackagePlus', color: '#22C55E' },
+  // Build timeline dynamically from status
+  const timeline: any[] = [
+    { title: 'Return Requested', detail: 'Customer submitted return request', time: new Date(r.createdAt).toLocaleString(), icon: 'PackagePlus', color: '#22C55E' },
   ];
-  if (r.status === 'APPROVED' || r.status === 'RECEIVED' || r.status === 'REFUNDED') {
-    timeline.push({ kind: 'approved', title: 'Return Approved', detail: 'Shipping instructions sent', time: new Date(r.updatedAt).toLocaleString(), icon: 'CircleCheck', color: '#3B82F6' });
+  if (['APPROVED','SHIPPED','RECEIVED','REFUNDED'].includes(r.status)) {
+    timeline.push({ title: 'Return Approved', detail: 'Shipping instructions sent to customer', time: new Date(r.updatedAt).toLocaleString(), icon: 'CircleCheck', color: '#3B82F6' });
   }
   if (r.status === 'REJECTED') {
-    timeline.push({ kind: 'rejected', title: 'Return Rejected', detail: r.rejectionReason || 'No reason provided', time: new Date(r.updatedAt).toLocaleString(), icon: 'CircleX', color: '#EF4444' });
+    timeline.push({ title: 'Return Rejected', detail: r.rejectionReason || 'No reason provided', time: new Date(r.updatedAt).toLocaleString(), icon: 'CircleX', color: '#EF4444' });
   }
-  if (r.status === 'RECEIVED' || r.status === 'REFUNDED') {
-    timeline.push({ kind: 'received', title: 'Items Received', detail: 'Items confirmed at warehouse', time: new Date(r.updatedAt).toLocaleString(), icon: 'PackageCheck', color: '#8B5CF6' });
+  if (r.status === 'EXPIRED') {
+    timeline.push({ title: 'Return Expired', detail: 'Customer did not ship within the allowed window', time: new Date(r.updatedAt).toLocaleString(), icon: 'Clock', color: '#6B7280' });
+  }
+  if (['SHIPPED','RECEIVED','REFUNDED'].includes(r.status)) {
+    timeline.push({ title: 'Items Shipped', detail: `Customer shipped items back${r.trackingNumber ? ` · ${r.trackingNumber}` : ''}`, time: r.shippedAt ? new Date(r.shippedAt).toLocaleString() : new Date(r.updatedAt).toLocaleString(), icon: 'Truck', color: '#10B981' });
+  }
+  if (['RECEIVED','REFUNDED'].includes(r.status)) {
+    timeline.push({ title: 'Items Received', detail: 'Items confirmed at warehouse', time: new Date(r.updatedAt).toLocaleString(), icon: 'PackageCheck', color: '#8B5CF6' });
   }
   if (r.status === 'REFUNDED') {
-    timeline.push({ kind: 'refunded', title: 'Refund Issued', detail: `${REFUND_TYPES[r.refundType as string]?.label} · $${r.refundAmount.toFixed(2)}`, time: new Date(r.updatedAt).toLocaleString(), icon: 'DollarSign', color: '#22C55E' });
+    timeline.push({ title: 'Refund Issued', detail: `${REFUND_TYPES[r.refundType as string]?.label} · $${r.refundAmount.toFixed(2)}`, time: new Date(r.updatedAt).toLocaleString(), icon: 'DollarSign', color: '#22C55E' });
   }
 
   return (
@@ -386,10 +396,10 @@ export default function ReturnDetailPage() {
                 <div className="col-span-2">
                   <div className="text-ink font-semibold text-[14px]">{r.customerName || r.customerEmail.split('@')[0]}</div>
                 </div>
-                <Field icon="Mail"     label="Email"        value={r.customerEmail} />
-                <Field icon="Phone"    label="Phone"        value={r.customerPhone || 'N/A'} />
-                <Field icon="Receipt"  label="Order"        value={<a className="text-accent2 hover:text-white cursor-pointer">{r.orderName}</a>} />
-                <Field icon="Calendar" label="Date"         value={new Date(r.orderDate).toLocaleDateString()} />
+                <Field icon="Mail"     label="Email"   value={r.customerEmail} />
+                <Field icon="Phone"    label="Phone"   value={r.customerPhone || 'N/A'} />
+                <Field icon="Receipt"  label="Order"   value={<a className="text-accent2 hover:text-white cursor-pointer">{r.orderName}</a>} />
+                <Field icon="Calendar" label="Date"    value={new Date(r.orderDate).toLocaleDateString()} />
               </div>
             </div>
           </Card>
@@ -444,7 +454,7 @@ export default function ReturnDetailPage() {
                     <div className="flex-1 min-w-0 pt-0.5">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[13px] font-semibold text-ink">{t.title}</span>
-                        <span className="text-[11.5px] text-muted">·  {t.time}</span>
+                        <span className="text-[11.5px] text-muted">· {t.time}</span>
                       </div>
                       <div className="text-[12.5px] text-muted mt-0.5">{t.detail}</div>
                     </div>
@@ -482,19 +492,29 @@ export default function ReturnDetailPage() {
           <Card title="Actions">
             {isPending && (
               <>
-                <Btn variant="ok"            className="w-full" size="lg" icon="Check"   onClick={() => setApproveOpen(true)} disabled={fetcher.state !== 'idle'}>Approve Return</Btn>
+                <Btn variant="ok" className="w-full" size="lg" icon="Check" onClick={() => setApproveOpen(true)} disabled={fetcher.state !== 'idle'}>Approve Return</Btn>
                 <Btn variant="danger-outline" className="w-full mt-2.5" size="lg" icon="X" onClick={() => setRejectOpen(true)} disabled={fetcher.state !== 'idle'}>Reject Return</Btn>
                 <div className="mt-4 pt-4 border-t border-divider text-[12px] text-muted leading-relaxed">
-                  Once approved, the customer will receive shipping instructions and a prepaid label.
+                  Once approved, the customer will receive shipping instructions.
                 </div>
               </>
             )}
             {isApproved && (
               <>
-                <Btn variant="primary" className="w-full" size="lg" icon="PackageCheck" onClick={handleMarkReceived} disabled={fetcher.state !== 'idle'}>Mark as Received</Btn>
+                <Btn variant="primary" className="w-full" size="lg" icon="Truck" onClick={() => setShipOpen(true)} disabled={fetcher.state !== 'idle'}>Mark as Shipped</Btn>
+                <Btn variant="secondary" className="w-full mt-2.5" size="lg" icon="PackageCheck" onClick={handleMarkReceived} disabled={fetcher.state !== 'idle'}>Skip to Received</Btn>
                 <div className="mt-3 px-3 py-2.5 rounded-md bg-info/10 border border-info/20 text-[12px] text-info flex items-start gap-2">
                   <Icon name="Truck" size={14} className="mt-0.5 shrink-0" />
-                  <div>Waiting for customer to ship items back.</div>
+                  <div>Waiting for customer to ship items back. Mark shipped when tracking is available.</div>
+                </div>
+              </>
+            )}
+            {isShipped && (
+              <>
+                <Btn variant="primary" className="w-full" size="lg" icon="PackageCheck" onClick={handleMarkReceived} disabled={fetcher.state !== 'idle'}>Mark as Received</Btn>
+                <div className="mt-3 px-3 py-2.5 rounded-md bg-[#10B981]/10 border border-[#10B981]/20 text-[12px] text-[#10B981] flex items-start gap-2">
+                  <Icon name="Truck" size={14} className="mt-0.5 shrink-0" />
+                  <div>Items in transit. Mark received once they arrive at your warehouse.</div>
                 </div>
               </>
             )}
@@ -504,10 +524,10 @@ export default function ReturnDetailPage() {
                 <div className="mt-3 text-[12px] text-muted">Items received and inspected. Ready to refund.</div>
               </>
             )}
-            {(r.status === 'REFUNDED' || r.status === 'REJECTED') && (
+            {isClosed && (
               <div className="px-3 py-3 rounded-md text-[12.5px]"
                    style={{ background: STATUS_STYLES[r.status]?.bg || '#333', color: STATUS_STYLES[r.status]?.text || '#fff' }}>
-                This return is closed. No further actions available.
+                This return is {r.status === 'EXPIRED' ? 'expired' : 'closed'}. No further actions available.
               </div>
             )}
           </Card>
@@ -515,8 +535,8 @@ export default function ReturnDetailPage() {
           {/* Refund preview */}
           <Card title="Refund Preview">
             <div className="space-y-2 text-[13px]">
-              <Row label="Items total"     value={`$${itemsTotal.toFixed(2)}`} />
-              <Row label="Restocking fee"  value={`-$${restocking.toFixed(2)}`} muted />
+              <Row label="Items total"      value={`$${itemsTotal.toFixed(2)}`} />
+              <Row label="Restocking fee"   value={`-$${restocking.toFixed(2)}`} muted />
               <div className="border-t border-divider my-2"></div>
               <Row label="Estimated refund" value={`$${refund.toFixed(2)}`} strong />
               <div className="flex items-center justify-between pt-1.5">
@@ -535,34 +555,45 @@ export default function ReturnDetailPage() {
                 <div className="px-2.5 py-1.5 rounded-md text-[11.5px] flex items-start gap-1.5"
                      style={{ background: 'rgba(108,99,255,0.08)', color: '#8B85FF' }}>
                   <Icon name="Sparkles" size={11} className="mt-0.5" />
-                  <span>+{r.settings.storeCreditBonusPercent}% bonus credit applied · total <strong className="text-ink">${(refund * (1 + r.settings.storeCreditBonusPercent / 100)).toFixed(2)}</strong></span>
+                  <span>+{r.settings.storeCreditBonusPercent}% bonus credit · total <strong className="text-ink">${(refund * (1 + r.settings.storeCreditBonusPercent / 100)).toFixed(2)}</strong></span>
+                </div>
+              )}
+              {r.refundType === 'EXCHANGE' && (r as any).exchangeNote && (
+                <div className="px-2.5 py-2 rounded-md text-[12px] flex items-start gap-1.5 border"
+                     style={{ background: 'rgba(59,130,246,0.06)', color: '#3B82F6', borderColor: 'rgba(59,130,246,0.2)' }}>
+                  <Icon name="RefreshCw" size={12} className="mt-0.5 shrink-0" />
+                  <div><span className="font-semibold">Exchange note: </span>{(r as any).exchangeNote}</div>
                 </div>
               )}
             </div>
           </Card>
 
-          {/* Order info */}
-          <Card title="Order Info">
+          {/* Shipping Info */}
+          <Card title="Shipping Info">
             <div className="space-y-2.5 text-[13px]">
-              <Row label="Order"          value={<a className="text-accent2 hover:text-white cursor-pointer">{r.orderName}</a>} />
-              <Row label="Total"          value={`$${r.orderTotal.toFixed(2)}`} />
-              {r.carrier && <Row label="Carrier"       value={r.carrier} />}
-              {r.trackingNumber && <Row label="Tracking"     value={r.trackingNumber} />}
+              <Row label="Order"    value={<a className="text-accent2 hover:text-white cursor-pointer">{r.orderName}</a>} />
+              <Row label="Total"    value={`$${r.orderTotal.toFixed(2)}`} />
+              {r.carrier       && <Row label="Carrier"   value={r.carrier} />}
+              {r.trackingNumber && <Row label="Tracking"  value={r.trackingNumber} />}
+              {r.shippedAt     && <Row label="Shipped"   value={new Date(r.shippedAt).toLocaleDateString()} />}
               {r.labelUrl && (
                 <div className="flex items-center justify-between">
                   <span className="text-muted">Shipping Label</span>
                   <a href={r.labelUrl} target="_blank" rel="noreferrer"
                      className="inline-flex items-center gap-1.5 text-accent2 hover:underline text-[12.5px] font-medium">
-                    <Icon name="Download" size={13} /> Download label
+                    <Icon name="Download" size={13} /> Download
                   </a>
                 </div>
+              )}
+              {!r.carrier && !r.trackingNumber && (
+                <div className="text-[12px] text-faint italic">No shipping info yet.</div>
               )}
             </div>
           </Card>
         </div>
       </div>
 
-      {/* Modals */}
+      {/* APPROVE Modal */}
       <Modal open={approveOpen} onClose={() => setApproveOpen(false)} title="Approve this return?"
              footer={<>
                <Btn variant="ghost" onClick={() => setApproveOpen(false)}>Cancel</Btn>
@@ -570,9 +601,8 @@ export default function ReturnDetailPage() {
              </>}>
         <div className="space-y-4">
           <div className="text-[13px] text-muted leading-relaxed">
-            The customer will be emailed shipping instructions. You can optionally provide tracking details below.
+            The customer will be emailed shipping instructions. Optionally provide a prepaid label below.
           </div>
-          
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[12px] font-medium text-muted block mb-1.5">Carrier</label>
@@ -584,25 +614,50 @@ export default function ReturnDetailPage() {
             </div>
           </div>
           <div>
-            <label className="text-[12px] font-medium text-muted block mb-1.5">Prepaid Shipping Label URL <span className="text-faint font-normal">(optional — sent to customer)</span></label>
+            <label className="text-[12px] font-medium text-muted block mb-1.5">Prepaid Shipping Label URL <span className="text-faint font-normal">(optional)</span></label>
             <Input value={labelUrl} onChange={(e: any) => setLabelUrl(e.target.value)} placeholder="https://..." />
           </div>
         </div>
       </Modal>
 
+      {/* REJECT Modal */}
       <Modal open={rejectOpen} onClose={() => setRejectOpen(false)} title="Reject this return?"
              footer={<>
                <Btn variant="ghost" onClick={() => setRejectOpen(false)}>Cancel</Btn>
                <Btn variant="danger" icon="X" onClick={handleReject} disabled={!rejectReason.trim() || fetcher.state !== 'idle'}>Reject & Notify</Btn>
              </>}>
         <div className="text-[13px] text-muted leading-relaxed mb-3">
-          The customer will be notified that their return cannot be accepted. Let them know why.
+          The customer will be notified that their return cannot be accepted.
         </div>
         <label className="text-[12px] font-medium text-muted block mb-1.5">Reason for rejection</label>
         <Textarea value={rejectReason} onChange={(e: any) => setRejectReason(e.target.value)} rows={4}
                   placeholder="e.g. Outside 30-day return window; items show signs of wear." />
       </Modal>
 
+      {/* SHIPPED Modal */}
+      <Modal open={shipOpen} onClose={() => setShipOpen(false)} title="Mark as Shipped"
+             footer={<>
+               <Btn variant="ghost" onClick={() => setShipOpen(false)}>Cancel</Btn>
+               <Btn variant="primary" icon="Truck" onClick={handleMarkShipped} disabled={fetcher.state !== 'idle'}>Confirm Shipped</Btn>
+             </>}>
+        <div className="space-y-4">
+          <div className="text-[13px] text-muted leading-relaxed">
+            Confirm that the customer has shipped the items back. Add tracking info if available.
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[12px] font-medium text-muted block mb-1.5">Carrier</label>
+              <Input value={shipCarrier} onChange={(e: any) => setShipCarrier(e.target.value)} placeholder="e.g. USPS" />
+            </div>
+            <div>
+              <label className="text-[12px] font-medium text-muted block mb-1.5">Tracking Number</label>
+              <Input value={shipTracking} onChange={(e: any) => setShipTracking(e.target.value)} placeholder="e.g. 9400..." />
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* REFUND Modal */}
       <Modal open={refundOpen} onClose={() => setRefundOpen(false)} title="Process Refund" width="max-w-lg"
              footer={<>
                <Btn variant="ghost" onClick={() => setRefundOpen(false)}>Cancel</Btn>
@@ -612,7 +667,6 @@ export default function ReturnDetailPage() {
           const requested = REFUND_TYPES[r.refundType as string] || REFUND_TYPES['ORIGINAL_PAYMENT'];
           return (
             <div className="space-y-4">
-              {/* Customer requested */}
               <div>
                 <div className="text-[11px] uppercase tracking-wider text-faint font-semibold mb-1.5">Customer requested</div>
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md"
@@ -622,7 +676,6 @@ export default function ReturnDetailPage() {
                 </div>
               </div>
 
-              {/* Override toggle */}
               <div className="p-3 rounded-md bg-bg/40 border border-divider">
                 <Toggle checked={overrideMethod} onChange={(v: boolean) => { setOverrideMethod(v); if (!v) setRefundMethod(r.refundType || 'ORIGINAL_PAYMENT'); }}
                         label="Override refund method"
@@ -644,7 +697,6 @@ export default function ReturnDetailPage() {
                 )}
               </div>
 
-              {/* Amount */}
               <div>
                 <label className="text-[11px] uppercase tracking-wider text-faint font-semibold block mb-1.5">Refund amount</label>
                 <div className="relative">
@@ -654,14 +706,11 @@ export default function ReturnDetailPage() {
                 </div>
               </div>
 
-              {/* Method-specific notes */}
               {refundMethod === 'STORE_CREDIT' && (
                 <div className="p-3 rounded-md text-[12.5px] flex gap-2 items-start"
                      style={{ background: 'rgba(108,99,255,0.10)', color: '#8B85FF' }}>
                   <Icon name="Info" size={14} className="mt-0.5 shrink-0" />
-                  <div className="leading-relaxed">
-                    A discount code will be created in Shopify for the amount. The customer can use it at checkout.
-                  </div>
+                  <div className="leading-relaxed">A discount code will be created in Shopify for the amount.</div>
                 </div>
               )}
             </div>
@@ -686,7 +735,7 @@ function Field({ icon, label, value }: any) {
 function Row({ label, value, strong, muted }: any) {
   return (
     <div className="flex items-center justify-between">
-      <span className={muted ? 'text-muted' : 'text-muted'}>{label}</span>
+      <span className="text-muted">{label}</span>
       <span className={`tabular-nums ${strong ? 'text-ink font-semibold text-[15px]' : muted ? 'text-faint' : 'text-ink'}`}>{value}</span>
     </div>
   );

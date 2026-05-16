@@ -13,7 +13,7 @@ const transporter = nodemailer.createTransport({
 });
 
 export async function sendReturnEmail(
-  type: "Request Received" | "Approved" | "Rejected" | "Refunded",
+  type: "Request Received" | "Approved" | "Rejected" | "Refunded" | "Shipped" | "Expired",
   data: {
     to: string;
     shop?: string;
