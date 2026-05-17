@@ -302,10 +302,21 @@ export function Sidebar({ pendingCount, unreadCount = 0, shop, shopName, planNam
           <Icon name="ExternalLink" size={15} className="group-hover:text-accent2 transition-colors" />
           <span className="flex-1 text-left font-medium">Preview portal</span>
         </a>
-        <a className="group w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] text-muted hover:text-ink hover:bg-white/[0.04] hover:translate-x-[1px] transition-all duration-200 ease-smooth cursor-pointer">
-          <Icon name="BookOpen" size={15} className="group-hover:text-accent2 transition-colors" />
+        <Link to={`/app/docs${location.search}`}
+                className={`group w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] relative
+                  transition-[background-color,color,transform] duration-200 ease-smooth
+                  ${currentPath.startsWith('/app/docs') ? 'text-ink' : 'text-muted hover:text-ink hover:bg-white/[0.04] hover:translate-x-[1px]'}`}
+                style={currentPath.startsWith('/app/docs') ? {
+                  background: 'linear-gradient(90deg, rgba(108,99,255,0.18), rgba(108,99,255,0.06))',
+                } : undefined}>
+          {currentPath.startsWith('/app/docs') && (
+            <span className="absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-r-full bg-gradient-to-b from-accent2 to-accent shadow-[0_0_10px_rgba(108,99,255,0.6)]" />
+          )}
+          <Icon name="BookOpen" size={15}
+                className={`${currentPath.startsWith('/app/docs') ? 'text-accent2' : 'group-hover:text-ink'} transition-colors`}
+                strokeWidth={currentPath.startsWith('/app/docs') ? 2.25 : 2} />
           <span className="flex-1 text-left font-medium">Docs</span>
-        </a>
+        </Link>
       </nav>
 
       {/* Footer */}

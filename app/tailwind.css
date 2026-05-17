@@ -129,6 +129,20 @@
   select:focus-visible { outline-offset: 1px; }
 }
 
+@layer components {
+  /* ──────── Documentation typography ──────── */
+  .prose-rf { font-size: 13.5px; line-height: 1.65; color: rgb(var(--c-ink)); }
+  .prose-rf p { color: rgb(var(--c-muted)); margin: 0.75rem 0; }
+  .prose-rf p:first-child { margin-top: 0; }
+  .prose-rf h3 { font-size: 16px; font-weight: 600; color: rgb(var(--c-ink)); margin: 1.5rem 0 0.5rem; letter-spacing: -0.01em; }
+  .prose-rf h4 { font-size: 14px; font-weight: 600; color: rgb(var(--c-ink)); margin: 1.25rem 0 0.5rem; letter-spacing: -0.01em; }
+  .prose-rf ul { margin: 0.5rem 0 0.75rem; padding-left: 1.1rem; color: rgb(var(--c-muted)); }
+  .prose-rf ul li { position: relative; padding-left: 0.25rem; margin: 0.3rem 0; }
+  .prose-rf ul li::marker { color: rgb(var(--c-accent2)); }
+  .prose-rf strong { color: rgb(var(--c-ink)); font-weight: 600; }
+  .prose-rf hr { border: none; border-top: 1px solid rgb(var(--c-divider)); margin: 1.25rem 0; }
+}
+
 @layer utilities {
   /* Glass-morphism surface */
   .rf-glass {
