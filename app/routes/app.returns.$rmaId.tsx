@@ -96,6 +96,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     if (!rr) return { error: "Not found" };
 
     let storeCreditCode: string | null = null;
+    let exchangeOrderId: string | null = null;
+    let exchangeOrderUrl: string | null = null;
 
     if (refundMethod === 'ORIGINAL_PAYMENT') {
       try {
@@ -117,48 +119,53 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         const orderData = await orderRes.json();
         const order = orderData.data?.order;
 
-        if (order) {
-          const saleTx = order.transactions?.find(
-            (t: any) => (t.kind === 'SALE' || t.kind === 'CAPTURE') && t.status === 'SUCCESS'
-          );
-          const shopifyLineItems: any[] = order.lineItems?.edges?.map((e: any) => e.node) || [];
-          const refundLineItems = rr.items
-            .map((it: any) => {
-              let shopifyItem = it.lineItemId
-                ? shopifyLineItems.find((li: any) => li.id === it.lineItemId)
-                : shopifyLineItems.find((li: any) => li.variant?.id === it.variantId);
-              if (!shopifyItem) return null;
-              return { lineItemId: shopifyItem.id, quantity: it.quantity, restockType: "RETURN" };
-            })
-            .filter(Boolean);
+        if (!order) {
+          return { error: "Order not found in Shopify. Please verify the order ID." };
+        }
 
-          if (saleTx && refundLineItems.length > 0) {
-            const refundInput: any = {
-              orderId: rr.orderId,
-              refundLineItems,
-              transactions: [{
-                parentId: saleTx.id,
-                amount: refundAmount.toFixed(2),
-                kind: "REFUND",
-                gateway: saleTx.gateway
-              }],
-              notify: true
-            };
-            const refundRes = await admin.graphql(`#graphql
-              mutation RefundCreate($input: RefundInput!) {
-                refundCreate(input: $input) {
-                  refund { id createdAt }
-                  userErrors { field message }
-                }
-              }`, { variables: { input: refundInput } });
-            const refundData = await refundRes.json();
-            const userErrors = refundData.data?.refundCreate?.userErrors || [];
-            if (userErrors.length > 0) {
-              return { error: `Shopify refund error: ${userErrors.map((e: any) => e.message).join(', ')}` };
+        const saleTx = order.transactions?.find(
+          (t: any) => (t.kind === 'SALE' || t.kind === 'CAPTURE') && t.status === 'SUCCESS'
+        );
+        const shopifyLineItems: any[] = order.lineItems?.edges?.map((e: any) => e.node) || [];
+        const refundLineItems = rr.items
+          .map((it: any) => {
+            const shopifyItem = it.lineItemId
+              ? shopifyLineItems.find((li: any) => li.id === it.lineItemId)
+              : shopifyLineItems.find((li: any) => li.variant?.id === it.variantId);
+            if (!shopifyItem) return null;
+            return { lineItemId: shopifyItem.id, quantity: it.quantity, restockType: "RETURN" };
+          })
+          .filter(Boolean);
+
+        if (!saleTx) {
+          return { error: "No successful payment transaction found on this order. The refund cannot be processed automatically." };
+        }
+        if (refundLineItems.length === 0) {
+          return { error: "Could not match return items to Shopify order line items. Please process this refund manually in Shopify admin." };
+        }
+
+        const refundInput: any = {
+          orderId: rr.orderId,
+          refundLineItems,
+          transactions: [{
+            parentId: saleTx.id,
+            amount: refundAmount.toFixed(2),
+            kind: "REFUND",
+            gateway: saleTx.gateway
+          }],
+          notify: true
+        };
+        const refundRes = await admin.graphql(`#graphql
+          mutation RefundCreate($input: RefundInput!) {
+            refundCreate(input: $input) {
+              refund { id createdAt }
+              userErrors { field message }
             }
-          } else {
-            console.warn("[refund] Could not match transaction/line items. Marking manually.");
-          }
+          }`, { variables: { input: refundInput } });
+        const refundData = await refundRes.json();
+        const userErrors = refundData.data?.refundCreate?.userErrors || [];
+        if (userErrors.length > 0) {
+          return { error: `Shopify refund error: ${userErrors.map((e: any) => e.message).join(', ')}` };
         }
       } catch (e: any) {
         return { error: `Failed to issue refund: ${e?.message || 'unknown error'}` };
@@ -187,7 +194,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
                 code: discountCode,
                 customerSelection: { all: true },
                 customerGets: {
-                  value: { discountAmount: { amount: refundAmount, appliesOnEachItem: false } },
+                  value: { discountAmount: { amount: String(refundAmount.toFixed(2)), appliesOnEachItem: false } },
                   items: { all: true }
                 },
                 startsAt: new Date().toISOString()
@@ -197,17 +204,67 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         );
         const discountData = await createDiscountRes.json();
         const userErrors = discountData.data?.discountCodeBasicCreate?.userErrors || [];
-        if (userErrors.length === 0) {
-          storeCreditCode = discountData.data?.discountCodeBasicCreate?.codeDiscountNode?.codeDiscount?.codes?.edges?.[0]?.node?.code || discountCode;
+        if (userErrors.length > 0) {
+          return { error: `Failed to create store credit code: ${userErrors.map((e: any) => e.message).join(', ')}` };
         }
-      } catch (e) {
-        console.error("[refund] Failed to create discount code", e);
+        storeCreditCode = discountData.data?.discountCodeBasicCreate?.codeDiscountNode?.codeDiscount?.codes?.edges?.[0]?.node?.code || discountCode;
+      } catch (e: any) {
+        return { error: `Failed to create store credit: ${e?.message || 'unknown error'}` };
+      }
+
+    } else if (refundMethod === 'EXCHANGE') {
+      try {
+        const draftOrderRes = await admin.graphql(`#graphql
+          mutation DraftOrderCreate($input: DraftOrderInput!) {
+            draftOrderCreate(input: $input) {
+              draftOrder { id name invoiceUrl }
+              userErrors { field message }
+            }
+          }`, {
+          variables: {
+            input: {
+              email: rr.customerEmail,
+              note: rr.exchangeNote || 'Exchange request',
+              lineItems: [{
+                title: `Exchange — ${rr.exchangeNote || 'Replacement item'}`,
+                originalUnitPrice: String(refundAmount.toFixed(2)),
+                quantity: 1,
+                requiresShipping: true,
+              }],
+              appliedDiscount: {
+                value: refundAmount,
+                amount: refundAmount,
+                valueType: "FIXED_AMOUNT",
+                title: `Return credit ${rmaId}`,
+              },
+              tags: [`exchange`, `return-${rmaId}`],
+            }
+          }
+        });
+        const draftData = await draftOrderRes.json();
+        const draftErrors = draftData.data?.draftOrderCreate?.userErrors || [];
+        if (draftErrors.length > 0) {
+          return { error: `Failed to create exchange draft order: ${draftErrors.map((e: any) => e.message).join(', ')}` };
+        }
+        const draftOrder = draftData.data?.draftOrderCreate?.draftOrder;
+        if (draftOrder) {
+          exchangeOrderId = draftOrder.id;
+          exchangeOrderUrl = draftOrder.invoiceUrl;
+        }
+      } catch (e: any) {
+        return { error: `Failed to process exchange: ${e?.message || 'unknown error'}` };
       }
     }
 
     await prisma.returnRequest.update({
       where: { rma: rmaId, shop },
-      data: { status: "REFUNDED", refundType: refundMethod, refundAmount }
+      data: {
+        status: "REFUNDED",
+        refundType: refundMethod,
+        refundAmount,
+        ...(exchangeOrderId && { exchangeOrderId }),
+        ...(exchangeOrderUrl && { exchangeOrderUrl }),
+      }
     });
 
     await sendReturnEmail("Refunded", {
@@ -520,8 +577,12 @@ export default function ReturnDetailPage() {
             )}
             {isReceived && (
               <>
-                <Btn variant="ok" className="w-full" size="lg" icon="DollarSign" onClick={openRefundModal}>Issue Refund</Btn>
-                <div className="mt-3 text-[12px] text-muted">Items received and inspected. Ready to refund.</div>
+                <Btn variant="ok" className="w-full" size="lg" icon={r.refundType === 'EXCHANGE' ? 'RefreshCw' : 'DollarSign'} onClick={openRefundModal}>
+                  {r.refundType === 'EXCHANGE' ? 'Process Exchange' : 'Issue Refund'}
+                </Btn>
+                <div className="mt-3 text-[12px] text-muted">
+                  {r.refundType === 'EXCHANGE' ? 'Items received. Ready to create replacement order.' : 'Items received and inspected. Ready to refund.'}
+                </div>
               </>
             )}
             {isClosed && (
@@ -562,7 +623,17 @@ export default function ReturnDetailPage() {
                 <div className="px-2.5 py-2 rounded-md text-[12px] flex items-start gap-1.5 border"
                      style={{ background: 'rgba(59,130,246,0.06)', color: '#3B82F6', borderColor: 'rgba(59,130,246,0.2)' }}>
                   <Icon name="RefreshCw" size={12} className="mt-0.5 shrink-0" />
-                  <div><span className="font-semibold">Exchange note: </span>{(r as any).exchangeNote}</div>
+                  <div><span className="font-semibold">Customer wants: </span>{(r as any).exchangeNote}</div>
+                </div>
+              )}
+              {r.refundType === 'EXCHANGE' && (r as any).exchangeOrderUrl && (
+                <div className="px-2.5 py-2 rounded-md text-[12px] flex items-start gap-1.5 border"
+                     style={{ background: 'rgba(16,185,129,0.06)', color: '#10B981', borderColor: 'rgba(16,185,129,0.2)' }}>
+                  <Icon name="PackageCheck" size={12} className="mt-0.5 shrink-0" />
+                  <div>
+                    <span className="font-semibold">Shopify draft order created — </span>
+                    <a href={(r as any).exchangeOrderUrl} target="_blank" rel="noreferrer" className="underline">View & complete in Shopify</a>
+                  </div>
                 </div>
               )}
             </div>
@@ -585,7 +656,16 @@ export default function ReturnDetailPage() {
                   </a>
                 </div>
               )}
-              {!r.carrier && !r.trackingNumber && (
+              {(r as any).exchangeOrderUrl && (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted">Exchange Order</span>
+                  <a href={(r as any).exchangeOrderUrl} target="_blank" rel="noreferrer"
+                     className="inline-flex items-center gap-1.5 text-[#10B981] hover:underline text-[12.5px] font-medium">
+                    <Icon name="ExternalLink" size={13} /> View in Shopify
+                  </a>
+                </div>
+              )}
+              {!r.carrier && !r.trackingNumber && !(r as any).exchangeOrderUrl && (
                 <div className="text-[12px] text-faint italic">No shipping info yet.</div>
               )}
             </div>
@@ -658,10 +738,13 @@ export default function ReturnDetailPage() {
       </Modal>
 
       {/* REFUND Modal */}
-      <Modal open={refundOpen} onClose={() => setRefundOpen(false)} title="Process Refund" width="max-w-lg"
+      <Modal open={refundOpen} onClose={() => setRefundOpen(false)}
+             title={r.refundType === 'EXCHANGE' ? 'Process Exchange' : 'Process Refund'} width="max-w-lg"
              footer={<>
                <Btn variant="ghost" onClick={() => setRefundOpen(false)}>Cancel</Btn>
-               <Btn variant="primary" icon="DollarSign" onClick={handleRefund} disabled={fetcher.state !== 'idle'}>Confirm Refund</Btn>
+               <Btn variant="primary" icon={r.refundType === 'EXCHANGE' ? 'RefreshCw' : 'DollarSign'} onClick={handleRefund} disabled={fetcher.state !== 'idle'}>
+                 {refundMethod === 'EXCHANGE' ? 'Create Exchange Order' : 'Confirm Refund'}
+               </Btn>
              </>}>
         {(() => {
           const requested = REFUND_TYPES[r.refundType as string] || REFUND_TYPES['ORIGINAL_PAYMENT'];
@@ -710,7 +793,23 @@ export default function ReturnDetailPage() {
                 <div className="p-3 rounded-md text-[12.5px] flex gap-2 items-start"
                      style={{ background: 'rgba(108,99,255,0.10)', color: '#8B85FF' }}>
                   <Icon name="Info" size={14} className="mt-0.5 shrink-0" />
-                  <div className="leading-relaxed">A discount code will be created in Shopify for the amount.</div>
+                  <div className="leading-relaxed">A discount code will be created in Shopify and sent to the customer by email.</div>
+                </div>
+              )}
+              {refundMethod === 'EXCHANGE' && (
+                <div className="space-y-3">
+                  {(r as any).exchangeNote && (
+                    <div className="p-3 rounded-md border text-[12.5px]"
+                         style={{ background: 'rgba(59,130,246,0.06)', borderColor: 'rgba(59,130,246,0.2)', color: '#3B82F6' }}>
+                      <div className="font-semibold mb-1 flex items-center gap-1.5"><Icon name="MessageSquare" size={12} /> Customer requested:</div>
+                      <div className="text-ink italic">"{(r as any).exchangeNote}"</div>
+                    </div>
+                  )}
+                  <div className="p-3 rounded-md text-[12.5px] flex gap-2 items-start"
+                       style={{ background: 'rgba(59,130,246,0.08)', color: '#3B82F6' }}>
+                    <Icon name="Info" size={14} className="mt-0.5 shrink-0" />
+                    <div className="leading-relaxed">A Shopify draft order will be created with the return value applied as a discount credit. You can then edit it in Shopify admin to add the exact replacement item before completing it.</div>
+                  </div>
                 </div>
               )}
             </div>

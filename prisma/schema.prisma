@@ -43,8 +43,35 @@ model ShopSettings {
   storeCreditBonusPercent Int      @default(10)
   incentivizeStoreCredit  Boolean  @default(false)
   brandColor              String   @default("#6C63FF")
+  emailBrandColor         String   @default("#6C63FF")
   logoUrl                 String?
   returnPolicy            String   @default("We want you to love what you buy. If something isn't quite right, here's how it works:\n\n· Returns are accepted within 30 days of delivery.\n· Items must be unworn, unwashed, and in original packaging.\n· Final-sale items (marked at checkout) cannot be returned.\n· Refunds are issued to the original payment method within 3–5 business days of receiving the returned item.\n\nTo start a return, head to our return portal with your order number and email. We'll email a prepaid label and you can drop it off at any location.\n\nQuestions? Email us — we usually reply within 1 business day.")
+
+  // Portal editor fields
+  portalLayout            String   @default("classic")
+  bannerColor             String   @default("#ffffff")
+  portalStoreName         String   @default("")
+  footerContact           String   @default("")
+  // Step labels (titles)
+  labelFindOrder          String   @default("Find your order")
+  labelSelectItems        String   @default("Select items to return")
+  labelReasons            String   @default("Tell us why")
+  labelRefundType         String   @default("How would you like to be refunded?")
+  labelConfirm            String   @default("Review & submit")
+  labelCta                String   @default("Find Order")
+  labelSubmit             String   @default("Submit Return Request")
+  // Step descriptions (subtitles)
+  descFindOrder           String   @default("Enter your order number and the email used at checkout.")
+  descSelectItems         String   @default("Select the items you'd like to return.")
+  descReasons             String   @default("Help us understand why you're returning each item.")
+  descRefundType          String   @default("Choose the option that works best for you.")
+  descConfirm             String   @default("One last look before we send this.")
+  // General UI texts
+  labelBackToStore        String   @default("Back to store")
+  labelCantFind           String   @default("Can't find your order?")
+  labelStartAnother       String   @default("Start another return")
+  labelPoweredBy          String   @default("Secured by ReturnFlow")
+  labelTrackingToggle     String   @default("Already shipped your return? Submit tracking")
   
   // Custom reasons
   reasons                 ReturnReason[]
@@ -87,9 +114,11 @@ model ReturnRequest {
   refundAmount    Float          @default(0)
   storeCreditBonus Float         @default(0)
 
-  rejectionReason String?
-  exchangeNote    String?   // Desired exchange item/size (when refundType = EXCHANGE)
-  labelUrl        String?
+  rejectionReason   String?
+  exchangeNote      String?   // Desired exchange item/size (when refundType = EXCHANGE)
+  exchangeOrderId   String?   // Shopify DraftOrder GID
+  exchangeOrderUrl  String?   // Shopify DraftOrder invoice URL
+  labelUrl          String?
   trackingNumber  String?
   carrier         String?
   shippedAt       DateTime?

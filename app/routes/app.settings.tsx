@@ -9,6 +9,7 @@ import { DEFAULT_REASONS, EMAIL_TEMPLATES } from "../components/mock-data";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
+  const appUrl = new URL(request.url).origin;
 
   let settings = await prisma.shopSettings.findUnique({
     where: { shop },
@@ -40,7 +41,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
   const templates = await prisma.emailTemplate.findMany({ where: { shop } });
 
-  return { settings, templates, shop };
+  return { settings, templates, shop, appUrl };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -76,14 +77,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         data: reasons.map((r: any) => ({ shop, label: r.label, enabled: r.enabled }))
       })
     ]);
-  } else if (intent === "save_branding") {
-    await prisma.shopSettings.update({
-      where: { shop },
-      data: { 
-        brandColor: formData.get("brandColor") as string,
-        logoUrl: formData.get("logoUrl") as string | null
-      }
-    });
   } else if (intent === "save_policy") {
     await prisma.shopSettings.update({
       where: { shop },
@@ -104,15 +97,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function SettingsPage() {
-  const { settings, templates, shop } = useLoaderData<typeof loader>();
+  const { settings, templates, shop, appUrl } = useLoaderData<typeof loader>();
   const [tab, setTab] = useState('General');
-  
+
   const tabs = [
-    { key: 'General',  icon: 'Settings2' },
-    { key: 'Reasons',  icon: 'Tag' },
-    { key: 'Emails',   icon: 'Mail' },
-    { key: 'Branding', icon: 'Palette' },
-    { key: 'Policy',   icon: 'FileText' },
+    { key: 'General', icon: 'Settings2' },
+    { key: 'Reasons', icon: 'Tag' },
+    { key: 'Emails',  icon: 'Mail' },
+    { key: 'Policy',  icon: 'FileText' },
+    { key: 'Portal',  icon: 'Globe' },
   ];
 
   return (
@@ -134,11 +127,11 @@ export default function SettingsPage() {
         })}
       </div>
 
-      {tab === 'General'  && <GeneralTab settings={settings} />}
-      {tab === 'Reasons'  && <ReasonsTab settings={settings} />}
-      {tab === 'Emails'   && <EmailsTab templates={templates} />}
-      {tab === 'Branding' && <BrandingTab settings={settings} shop={shop} />}
-      {tab === 'Policy'   && <PolicyTab settings={settings} />}
+      {tab === 'General' && <GeneralTab settings={settings} />}
+      {tab === 'Reasons' && <ReasonsTab settings={settings} />}
+      {tab === 'Emails'  && <EmailsTab templates={templates} />}
+      {tab === 'Policy'  && <PolicyTab settings={settings} />}
+      {tab === 'Portal'  && <PortalAccessTab shop={shop} appUrl={appUrl} />}
     </div>
   );
 }
@@ -510,109 +503,159 @@ function EmailsTab({ templates }: any) {
   );
 }
 
-// ---- Branding tab ----
-function BrandingTab({ settings, shop }: any) {
-  const submit = useSubmit();
-  const navigation = useNavigation();
-  const toast = useToast();
-  const isSaving = navigation.state === "submitting" && navigation.formData?.get("intent") === "save_branding";
-  const actionData = useActionData<typeof action>();
+// ---- Portal Access tab ----
+function PortalAccessTab({ shop, appUrl }: { shop: string; appUrl: string }) {
+  const [copied, setCopied] = useState<string | null>(null);
 
-  const [color, setColor] = useState(settings.brandColor);
-  const [logoUrl, setLogoUrl] = useState(settings.logoUrl || '');
+  const proxyUrl   = `https://${shop}/apps/returns`;
+  const directUrl  = `${appUrl}/portal?shop=${shop}`;
+  const iframeCode = `<iframe\n  src="${directUrl}"\n  width="100%"\n  height="700"\n  frameborder="0"\n  style="border:none;border-radius:12px;"\n></iframe>`;
 
-  useEffect(() => {
-    if (actionData?.success && navigation.state === "idle" && navigation.formData?.get("intent") === "save_branding") {
-      toast({ kind: 'success', title: 'Branding updated' });
-    }
-  }, [actionData, navigation.state, navigation.formData]);
-
-  const handleSave = () => {
-    const formData = new FormData();
-    formData.append("intent", "save_branding");
-    formData.append("brandColor", color);
-    formData.append("logoUrl", logoUrl);
-    submit(formData, { method: "POST" });
+  const copy = (key: string, text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(null), 2000);
+    });
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <div className="lg:col-span-3 bg-surface border border-border rounded-lg p-6">
-        <SettingRow label="Store logo URL" hint="Paste a public URL to your logo (PNG, SVG). Shown on the customer return portal and emails.">
-          <div className="flex items-center gap-2">
-            <Input
-              value={logoUrl}
-              onChange={(e: any) => setLogoUrl(e.target.value)}
-              placeholder="https://cdn.myshop.com/logo.png"
-              className="flex-1"
-            />
-            {logoUrl && (
-              <button onClick={() => setLogoUrl('')} className="text-faint hover:text-danger transition p-1">
-                <Icon name="X" size={14} />
+    <div className="space-y-6">
+      {/* Page URLs section */}
+      <div className="bg-surface border border-border rounded-lg p-6">
+        <div className="flex items-start gap-3 mb-5">
+          <div className="w-9 h-9 rounded-md grid place-content-center shrink-0" style={{ background: 'rgba(108,99,255,0.15)', color: '#8B85FF' }}>
+            <Icon name="Link2" size={16} />
+          </div>
+          <div>
+            <div className="text-[14px] font-semibold text-ink">Page URLs</div>
+            <div className="text-[12.5px] text-muted mt-0.5 leading-relaxed max-w-lg">
+              Add a link to your returns page in your store footer, returns policy page, or order confirmation emails using these URLs.
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <UrlRow
+            label="Shopify store (via app proxy)"
+            badge="Recommended"
+            description="Customers access the portal through your Shopify store URL — fully branded."
+            url={proxyUrl}
+            copyKey="proxy"
+            copied={copied}
+            onCopy={copy}
+          />
+          <UrlRow
+            label="Direct portal link"
+            badge="Universal"
+            description="Works on any website, email, or QR code — hosted on our servers."
+            url={directUrl}
+            copyKey="direct"
+            copied={copied}
+            onCopy={copy}
+          />
+        </div>
+      </div>
+
+      {/* Embedded returns page section */}
+      <div className="bg-surface border border-border rounded-lg p-6">
+        <div className="flex items-start gap-3 mb-5">
+          <div className="w-9 h-9 rounded-md grid place-content-center shrink-0" style={{ background: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}>
+            <Icon name="Code2" size={16} />
+          </div>
+          <div>
+            <div className="text-[14px] font-semibold text-ink">Embedded returns page</div>
+            <div className="text-[12.5px] text-muted mt-0.5 leading-relaxed max-w-lg">
+              Embed the returns portal directly inside a page on your website for a seamless branded experience.
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {/* Shopify - app proxy */}
+          <div className="rounded-lg border border-divider bg-bg/30 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted">For Shopify</span>
+              <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded" style={{ background: 'rgba(34,197,94,0.15)', color: '#16a34a' }}>App Proxy</span>
+            </div>
+            <p className="text-[12.5px] text-muted mb-3 leading-relaxed">
+              Add this path as a link or button in a Shopify page. Shopify routes it through the app proxy automatically.
+            </p>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 flex items-center h-9 px-3 rounded-md bg-bg border border-border font-mono text-[12px] text-ink overflow-x-auto">
+                /apps/returns
+              </div>
+              <button
+                onClick={() => copy('shopify-path', '/apps/returns')}
+                className="h-9 px-3 rounded-md text-[12px] font-medium border border-border bg-surface hover:bg-bg transition flex items-center gap-1.5 shrink-0"
+              >
+                {copied === 'shopify-path' ? <><Icon name="Check" size={13} className="text-[#22c55e]" /> Copied</> : <><Icon name="Copy" size={13} /> Copy</>}
               </button>
-            )}
-          </div>
-          {logoUrl && (
-            <div className="mt-2 flex items-center gap-2">
-              <img src={logoUrl} alt="Logo preview" className="h-10 w-auto object-contain rounded border border-border bg-white p-1"
-                   onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              <span className="text-[11.5px] text-muted">Preview</span>
-            </div>
-          )}
-        </SettingRow>
-
-        <SettingRow label="Brand color" hint="Used for buttons and accents on the customer portal.">
-          <div className="flex items-center gap-3">
-            <label className="relative w-10 h-10 rounded-md border border-border cursor-pointer overflow-hidden" style={{ background: color }}>
-              <input type="color" value={color} onChange={e => setColor(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" />
-            </label>
-            <Input value={color} onChange={(e: any) => setColor(e.target.value)} className="w-32 font-mono" />
-            <div className="flex gap-1.5">
-              {['#6C63FF','#3B82F6','#22C55E','#EF4444','#F59E0B','#0F1117'].map(c => (
-                <button key={c} onClick={() => setColor(c)}
-                        className={`w-7 h-7 rounded-md border-2 transition ${color.toLowerCase() === c.toLowerCase() ? 'border-ink' : 'border-border hover:border-muted'}`}
-                        style={{ background: c }} />
-              ))}
             </div>
           </div>
-        </SettingRow>
 
-        <div className="pt-2">
-          <a href={`https://${shop}/apps/returns`} target="_blank" rel="noreferrer">
-            <Btn variant="secondary" icon="ExternalLink">Preview Portal</Btn>
-          </a>
-        </div>
-
-        <SaveBar onSave={handleSave} onDiscard={() => { setColor(settings.brandColor); setLogoUrl(settings.logoUrl || ''); }} isSaving={isSaving} />
-      </div>
-
-      <div className="lg:col-span-2">
-        <div className="text-[12px] font-medium text-muted mb-2 flex items-center gap-1.5"><Icon name="Eye" size={12}/> Customer portal preview</div>
-        <div className="rounded-lg overflow-hidden border border-border shadow-pop">
-          <div className="bg-[#1a1d27] px-3 py-2 flex items-center gap-1.5 border-b border-border">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]"></span>
-            <span className="w-2.5 h-2.5 rounded-full bg-[#febc2e]"></span>
-            <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]"></span>
-            <div className="flex-1 mx-3 h-5 rounded text-[10px] bg-bg text-faint flex items-center px-2">acmestore.com/returns</div>
-          </div>
-          <div className="bg-[#F8FAFC] text-[#111] px-5 py-6">
-            <div className="flex items-center gap-2 mb-5">
-              <div className="w-7 h-7 rounded grid place-content-center text-white text-[11px] font-bold" style={{ background: color }}>A</div>
-              <div className="text-[13px] font-semibold">Acme Store · Return Center</div>
+          {/* Other platforms - iframe */}
+          <div className="rounded-lg border border-divider bg-bg/30 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted">For other platforms</span>
+              <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded" style={{ background: 'rgba(108,99,255,0.15)', color: '#6C63FF' }}>iFrame</span>
             </div>
-            <div className="text-[11px] uppercase tracking-wider text-[#888] mb-1.5">Step 1 of 4</div>
-            <div className="text-[16px] font-semibold mb-3">Find your order</div>
-            <div className="space-y-2 mb-4">
-              <div className="h-9 rounded border border-[#d8dce5] bg-white px-3 text-[12px] text-[#aaa] flex items-center">#1089</div>
-              <div className="h-9 rounded border border-[#d8dce5] bg-white px-3 text-[12px] text-[#aaa] flex items-center">your@email.com</div>
+            <p className="text-[12.5px] text-muted mb-3 leading-relaxed">
+              Paste this code into any HTML page to embed the returns portal. Works on Webflow, WordPress, Squarespace, and more.
+            </p>
+            <div className="relative">
+              <pre className="w-full p-3 rounded-md bg-[#0f1117] text-[#e2e8f0] font-mono text-[11.5px] leading-relaxed overflow-x-auto">
+                {iframeCode}
+              </pre>
+              <button
+                onClick={() => copy('iframe', iframeCode)}
+                className="absolute top-2 right-2 h-7 px-2.5 rounded text-[11px] font-medium bg-white/10 hover:bg-white/20 text-white transition flex items-center gap-1.5"
+              >
+                {copied === 'iframe' ? <><Icon name="Check" size={12} /> Copied</> : <><Icon name="Copy" size={12} /> Copy</>}
+              </button>
             </div>
-            <button className="w-full h-10 rounded text-[13px] font-semibold text-white transition" style={{ background: color }}>
-              Find Order
-            </button>
-            <div className="mt-4 text-[10.5px] text-[#888] text-center">Powered by ReturnFlow</div>
           </div>
         </div>
       </div>
+
+      {/* How to add tip */}
+      <div className="rounded-lg border border-divider bg-bg/30 p-4 flex items-start gap-3">
+        <Icon name="Lightbulb" size={15} className="text-accent mt-0.5 shrink-0" />
+        <div className="text-[12.5px] text-muted leading-relaxed">
+          <span className="font-semibold text-ink">Tip: </span>
+          The easiest way is to add a "Start a Return" button in your Shopify store's footer or on your order confirmation page pointing to <span className="font-mono text-ink">/apps/returns</span>.
+          Customers can then look up their order and submit a return request without logging in.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UrlRow({ label, badge, description, url, copyKey, copied, onCopy }: {
+  label: string; badge: string; description: string; url: string;
+  copyKey: string; copied: string | null; onCopy: (key: string, text: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 p-4 rounded-lg border border-divider bg-bg/20 flex-wrap">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="text-[13px] font-semibold text-ink">{label}</span>
+          <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded" style={{ background: 'rgba(108,99,255,0.12)', color: '#6C63FF' }}>{badge}</span>
+        </div>
+        <div className="text-[11.5px] text-muted">{description}</div>
+        <div className="mt-1.5 font-mono text-[12px] text-ink truncate">{url}</div>
+      </div>
+      <button
+        onClick={() => onCopy(copyKey, url)}
+        className="h-8 px-3 rounded-md text-[12px] font-medium border border-border bg-surface hover:bg-bg transition flex items-center gap-1.5 shrink-0"
+      >
+        {copied === copyKey
+          ? <><Icon name="Check" size={13} className="text-[#22c55e]" /> Copied</>
+          : <><Icon name="Copy" size={13} /> Copy URL</>}
+      </button>
+      <a href={url} target="_blank" rel="noreferrer"
+         className="h-8 px-3 rounded-md text-[12px] font-medium border border-border bg-surface hover:bg-bg transition flex items-center gap-1.5 shrink-0">
+        <Icon name="ExternalLink" size={13} /> Open
+      </a>
     </div>
   );
 }

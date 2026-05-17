@@ -22,30 +22,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { success: true, updated: rmas.length };
   }
 
-  if (intent === "export_csv") {
-    const returnRequests = await prisma.returnRequest.findMany({
-      where: { shop },
-      include: { items: true },
-      orderBy: { createdAt: 'desc' }
-    });
-    const rows: (string | number)[][] = [
-      ['RMA','Order','Customer','Email','Status','Refund Type','Amount','Items','Date'],
-      ...returnRequests.map((r: any) => [
-        r.rma, r.orderName, r.customerName ?? '', r.customerEmail,
-        r.status, r.refundType, r.refundAmount.toFixed(2),
-        r.items.length,
-        new Date(r.createdAt).toISOString().split('T')[0]
-      ])
-    ];
-    const csv = rows.map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-    return new Response(csv, {
-      headers: {
-        'Content-Type': 'text/csv',
-        'Content-Disposition': `attachment; filename="returns-${new Date().toISOString().split('T')[0]}.csv"`
-      }
-    });
-  }
-
   return null;
 };
 
@@ -110,23 +86,53 @@ export default function ReturnsPage() {
     setSelected(new Set());
   };
 
-  const handleExportCSV = () => {
-    const fd = new FormData();
-    fd.append("intent", "export_csv");
-    fetcher.submit(fd, { method: "POST", action: location.pathname + location.search });
-  };
-
   const listData = returnRequests.map((r: any) => ({
     rma: r.rma,
     order: r.orderName,
     customer: r.customerName || r.customerEmail.split('@')[0],
     email: r.customerEmail,
+    phone: r.customerPhone || '',
     date: new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    isoDate: new Date(r.createdAt).toISOString().split('T')[0],
     createdAt: new Date(r.createdAt),
     itemsCount: r.items.reduce((sum: number, it: any) => sum + it.quantity, 0),
     amount: r.refundAmount || r.orderTotal,
-    status: r.status
+    refundType: r.refundType,
+    status: r.status,
   }));
+
+  const handleExportCSV = (scope: 'filtered' | 'all' = 'filtered') => {
+    const rows = scope === 'all' ? listData : filtered;
+    const CSV_HEADERS = ['RMA', 'Order #', 'Customer', 'Email', 'Phone', 'Status', 'Refund Type', 'Amount ($)', 'Items', 'Date'];
+    const csvRows = [
+      CSV_HEADERS,
+      ...rows.map((r: any) => [
+        r.rma,
+        r.order,
+        r.customer,
+        r.email,
+        r.phone,
+        r.status,
+        r.refundType,
+        r.amount.toFixed(2),
+        r.itemsCount,
+        r.isoDate,
+      ]),
+    ];
+    const csv = csvRows
+      .map(row => row.map((v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), {
+      href: url,
+      download: `returns-${new Date().toISOString().split('T')[0]}${scope === 'filtered' && filtered.length !== listData.length ? '-filtered' : ''}.csv`,
+    });
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const TABS = ['All', 'Pending', 'Approved', 'Shipped', 'Received', 'Refunded', 'Rejected', 'Expired'];
   const TAB_COUNTS: Record<string, number> = {
@@ -200,7 +206,12 @@ export default function ReturnsPage() {
                 {TAB_COUNTS['Shipped']} in transit
               </span>
             )}
-            <Btn variant="secondary" icon="Download" onClick={handleExportCSV}>Export CSV</Btn>
+            <ExportMenu
+              onExportFiltered={() => handleExportCSV('filtered')}
+              onExportAll={() => handleExportCSV('all')}
+              filteredCount={filtered.length}
+              totalCount={listData.length}
+            />
           </>
         } />
 
@@ -326,6 +337,84 @@ export default function ReturnsPage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Export menu ──────────────────────────────────────────────────────────────
+
+function ExportMenu({ onExportFiltered, onExportAll, filteredCount, totalCount }: {
+  onExportFiltered: () => void;
+  onExportAll: () => void;
+  filteredCount: number;
+  totalCount: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const isFiltered = filteredCount !== totalCount;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="h-8 px-3 flex items-center gap-1.5 rounded-md border border-border bg-surface text-[12.5px] font-medium text-ink hover:bg-bg transition"
+      >
+        <Icon name="Download" size={13} />
+        Export CSV
+        <Icon name="ChevronDown" size={12} className="text-muted" />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1.5 z-40 w-56 rounded-lg border border-border bg-surface shadow-xl overflow-hidden">
+            <div className="px-3 py-2 border-b border-divider">
+              <div className="text-[10px] uppercase tracking-[0.08em] font-semibold text-faint">Export as CSV</div>
+            </div>
+
+            <button
+              onClick={() => { onExportFiltered(); setOpen(false); }}
+              className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-bg/60 transition text-left"
+            >
+              <div className="w-7 h-7 rounded-md grid place-content-center shrink-0 mt-0.5"
+                   style={{ background: "rgba(108,99,255,0.1)", color: "#8B85FF" }}>
+                <Icon name="Filter" size={13} />
+              </div>
+              <div>
+                <div className="text-[12.5px] font-semibold text-ink leading-tight">
+                  {isFiltered ? 'Export current view' : 'Export all'}
+                </div>
+                <div className="text-[11px] text-muted mt-0.5">
+                  {filteredCount} row{filteredCount !== 1 ? 's' : ''}
+                  {isFiltered ? ' (with active filters)' : ''}
+                </div>
+              </div>
+            </button>
+
+            {isFiltered && (
+              <button
+                onClick={() => { onExportAll(); setOpen(false); }}
+                className="w-full flex items-start gap-3 px-3 py-2.5 hover:bg-bg/60 transition text-left border-t border-divider"
+              >
+                <div className="w-7 h-7 rounded-md grid place-content-center shrink-0 mt-0.5"
+                     style={{ background: "rgba(16,185,129,0.1)", color: "#10B981" }}>
+                  <Icon name="Database" size={13} />
+                </div>
+                <div>
+                  <div className="text-[12.5px] font-semibold text-ink leading-tight">Export all returns</div>
+                  <div className="text-[11px] text-muted mt-0.5">{totalCount} row{totalCount !== 1 ? 's' : ''} — ignore filters</div>
+                </div>
+              </button>
+            )}
+
+            <div className="px-3 py-2 border-t border-divider bg-bg/30">
+              <div className="text-[10.5px] text-faint flex items-center gap-1">
+                <Icon name="Info" size={10} />
+                Includes RMA, order, customer, status, amount
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

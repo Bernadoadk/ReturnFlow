@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { useFetcher, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData, redirect } from "react-router";
 import { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -8,6 +8,18 @@ import { REFUND_TYPES } from "../components/mock-data";
 import { sendReturnEmail } from "../lib/mailer.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const reqUrl = new URL(request.url);
+
+  // When Shopify's app proxy serves the request, it appends a `signature` param.
+  // CSS/JS assets cannot load through the proxy (browser resolves relative paths
+  // against the Shopify store domain, not the app). Redirect to the direct URL
+  // so the browser loads the portal straight from the Vercel/tunnel origin.
+  if (reqUrl.searchParams.has("signature")) {
+    const shop = reqUrl.searchParams.get("shop") ?? "";
+    const appUrl = process.env.SHOPIFY_APP_URL?.replace(/\/$/, "") ?? reqUrl.origin;
+    throw redirect(`${appUrl}/portal?shop=${shop}`, 302);
+  }
+
   let shop = "";
   try {
     const { session } = await authenticate.public.appProxy(request);
@@ -19,12 +31,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       shop = url.searchParams.get("shop") || "";
     }
   } catch (e) {
-    // Local dev fallback — NOT for production
-    if (process.env.NODE_ENV !== "production") {
-      const url = new URL(request.url);
-      shop = url.searchParams.get("shop") || "example.myshopify.com";
-    } else {
-      // In production, reject unauthenticated requests
+    // HMAC verification failed — fall back to the shop query param that Shopify
+    // always appends when proxying through /apps/* (even without a valid signature).
+    const url = new URL(request.url);
+    shop = url.searchParams.get("shop") || "";
+    if (!shop && process.env.NODE_ENV !== "production") {
+      shop = "example.myshopify.com";
+    }
+    if (!shop) {
       throw new Response("Unauthorized", { status: 401 });
     }
   }
@@ -45,7 +59,28 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       incentivizeStoreCredit: true,
       reasons: [{ label: "Does not fit", enabled: true }, { label: "Changed my mind", enabled: true }],
       returnAddress: "Returns Dept",
-      shop: shop
+      shop: shop,
+      portalLayout: "classic",
+      bannerColor: "#ffffff",
+      portalStoreName: "",
+      footerContact: "",
+      labelFindOrder: "Find your order",
+      labelSelectItems: "Select items to return",
+      labelReasons: "Tell us why",
+      labelRefundType: "How would you like to be refunded?",
+      labelConfirm: "Review & submit",
+      labelCta: "Find Order",
+      labelSubmit: "Submit Return Request",
+      descFindOrder: "Enter your order number and the email used at checkout.",
+      descSelectItems: "Select the items you'd like to return.",
+      descReasons: "Help us understand why you're returning each item.",
+      descRefundType: "Choose the option that works best for you.",
+      descConfirm: "One last look before we send this.",
+      labelBackToStore: "Back to store",
+      labelCantFind: "Can't find your order?",
+      labelStartAnother: "Start another return",
+      labelPoweredBy: "Secured by ReturnFlow",
+      labelTrackingToggle: "Already shipped your return? Submit tracking",
     } as any;
   }
 
@@ -505,9 +540,9 @@ export default function PortalPage() {
 
   if (submittedRma) {
     return (
-      <PortalShell settings={settings} shop={shop}>
-        <PortalConfirmation rma={submittedRma} email={email} refundType={refundType} onReset={() => { 
-          setSubmittedRma(null); setStep(1); setOrderNum(''); setEmail(''); setOrderData(null); setSelectedItems({}); setReasons({}); setNotes({}); setRefundType('ORIGINAL_PAYMENT'); 
+      <PortalShell settings={settings} shop={shop} steps={[]} stepperCurrent={0}>
+        <PortalConfirmation rma={submittedRma} email={email} refundType={refundType} settings={settings} onReset={() => {
+          setSubmittedRma(null); setStep(1); setOrderNum(''); setEmail(''); setOrderData(null); setSelectedItems({}); setReasons({}); setNotes({}); setRefundType('ORIGINAL_PAYMENT');
         }} />
       </PortalShell>
     );
@@ -548,42 +583,50 @@ export default function PortalPage() {
     }, { method: 'POST' });
   };
 
+  const isSidebar = (settings?.portalLayout || 'classic') === 'sidebar';
+
+  const stepperEl = (
+    <Stepper steps={STEPS} current={stepperCurrent} onJump={(i: number) => {
+      const target = i + 1;
+      if (target < stepperCurrent) {
+        if (target === STEPS.length) go(confirmStep);
+        else go(target);
+      }
+    }} />
+  );
+
   return (
-    <PortalShell settings={settings} shop={shop}>
-      <Stepper steps={STEPS} current={stepperCurrent} onJump={(i: number) => {
-        const target = i + 1;
-        if (target < stepperCurrent) {
-          if (target === STEPS.length) go(confirmStep);
-          else go(target);
-        }
-      }} />
+    <PortalShell settings={settings} shop={shop} steps={STEPS} stepperCurrent={stepperCurrent}>
+      {!isSidebar && stepperEl}
 
       <div className="bg-white rounded-2xl border border-[#e6e6ec] shadow-[0_4px_24px_rgba(15,17,23,0.06)] p-6 sm:p-8 mt-6">
         {step === 1 && (
           <StepFindOrder orderNum={orderNum} setOrderNum={setOrderNum} email={email} setEmail={setEmail}
                          onNext={handleFindOrder} canContinue={canContinue[1]} isLoading={fetcher.state !== 'idle'}
                          error={(fetcher.data as any)?.error} shop={shop}
+                         shopSettings={settings}
                          fetcher={fetcher} trackingSubmitted={trackingSubmitted}
                          onTrackingReset={() => setTrackingSubmitted(false)} />
         )}
         {step === 2 && orderData && (
           <StepSelectItems items={orderData.items} orderName={orderData.name} date={orderData.createdAt}
                            isFulfilled={orderData.isFulfilled}
+                           shopSettings={settings}
                            selectedItems={selectedItems} setSelectedItems={setSelectedItems}
                            onBack={() => go(1)} onNext={() => canContinue[2] && go(3)} canContinue={canContinue[2]} />
         )}
         {step === 3 && (
           <StepReasons itemsList={itemsList} reasons={reasons} setReasons={setReasons}
                        notes={notes} setNotes={setNotes}
-                       exchangeNote={exchangeNote} setExchangeNote={setExchangeNote}
-                       refundType={refundType}
                        totalSteps={STEPS.length}
+                       shopSettings={settings}
                        reasonOptions={(settings?.reasons ?? []).filter((r: any) => r.enabled).map((r: any) => r.label)}
                        onBack={() => go(prevFrom(3))} onNext={() => canContinue[3] && go(nextFrom(3))} canContinue={canContinue[3]} />
         )}
         {step === 4 && showRefundStep && (
           <StepRefundType availableRefundTypes={availableRefundTypes}
             refundType={refundType} setRefundType={setRefundType}
+            exchangeNote={exchangeNote} setExchangeNote={setExchangeNote}
             totalRefund={totalRefund} shopSettings={settings} totalSteps={STEPS.length}
             onBack={() => go(prevFrom(4))} onNext={() => canContinue[4] && go(nextFrom(4))} canContinue={canContinue[4]} />
         )}
@@ -597,41 +640,226 @@ export default function PortalPage() {
       </div>
 
       <div className="text-center text-[12px] text-[#888] mt-6">
-        Need help? Email <a className="underline cursor-pointer" style={{ color: settings?.brandColor ?? '#6C63FF' }}>support@{shop}</a>
+        Need help? Email <a className="underline cursor-pointer" style={{ color: 'var(--brand)' }}>{settings?.footerContact || `support@${shop}`}</a>
         <div className="mt-1.5 flex items-center justify-center gap-1.5 text-[11px] text-[#aaa]">
-          <Icon name="Lock" size={11} /> Secured by ReturnFlow
+          <Icon name="Lock" size={11} /> {settings?.labelPoweredBy || 'Secured by ReturnFlow'}
         </div>
       </div>
     </PortalShell>
   );
 }
 
-function PortalShell({ children, settings, shop }: { children: React.ReactNode, settings: any, shop: string }) {
+function PortalShell({ children, settings, shop, steps, stepperCurrent }: {
+  children: React.ReactNode; settings: any; shop: string; steps?: string[]; stepperCurrent?: number;
+}) {
+  const layout = settings.portalLayout || 'classic';
+  const brand  = settings.brandColor ?? '#6C63FF';
+  const root   = { '--brand': brand } as React.CSSProperties;
+
+  if (layout === 'minimal') return <ShellMinimal settings={settings} shop={shop} style={root}>{children}</ShellMinimal>;
+  if (layout === 'bold')    return <ShellBold    settings={settings} shop={shop} style={root}>{children}</ShellBold>;
+  if (layout === 'sidebar') return <ShellSidebar settings={settings} shop={shop} style={root} steps={steps} stepperCurrent={stepperCurrent}>{children}</ShellSidebar>;
+  if (layout === 'compact') return <ShellCompact settings={settings} shop={shop} style={root}>{children}</ShellCompact>;
+  return <ShellClassic settings={settings} shop={shop} style={root}>{children}</ShellClassic>;
+}
+
+function ShellClassic({ children, settings, shop, style }: any) {
+  const storeName = settings.portalStoreName || shop.split('.')[0];
+  const headerBg  = settings.bannerColor || '#ffffff';
   return (
-    <div className="min-h-screen w-full font-sans" style={{ background: '#F8FAFC', color: '#0f1117' }}>
-      <header className="bg-white border-b border-[#e6e6ec]">
+    <div className="min-h-screen w-full font-sans" style={{ background: '#F8FAFC', color: '#0f1117', ...style }}>
+      <header style={{ background: headerBg, borderBottom: '1px solid #e6e6ec' }}>
         <div className="max-w-3xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             {settings.logoUrl ? (
               <img src={settings.logoUrl} alt="Logo" className="h-9 w-auto object-contain" />
             ) : (
               <div className="w-9 h-9 rounded-md grid place-content-center text-white font-bold"
-                   style={{ background: settings.brandColor, boxShadow: `0 4px 14px ${settings.brandColor}55` }}>
-                {shop.charAt(0).toUpperCase()}
+                   style={{ background: 'var(--brand)' }}>
+                {storeName.charAt(0).toUpperCase()}
               </div>
             )}
             <div>
-              <div className="text-[15px] font-semibold leading-tight">{shop.split('.')[0]}</div>
+              <div className="text-[15px] font-semibold leading-tight">{storeName}</div>
               <div className="text-[11.5px] text-[#888]">Return Center</div>
             </div>
           </div>
-          {/* Back to store instead of admin */}
           <a href={`https://${shop}`} className="text-[12.5px] text-[#666] hover:text-[#111] flex items-center gap-1.5">
-            <Icon name="ArrowLeft" size={13} /> Back to store
+            <Icon name="ArrowLeft" size={13} /> {settings.labelBackToStore || 'Back to store'}
           </a>
         </div>
       </header>
       <main className="max-w-3xl mx-auto px-5 sm:px-8 py-10">{children}</main>
+    </div>
+  );
+}
+
+function ShellMinimal({ children, settings, shop, style }: any) {
+  const storeName = settings.portalStoreName || shop.split('.')[0];
+  return (
+    <div className="min-h-screen w-full font-sans" style={{ background: '#fff', color: '#0f1117', ...style }}>
+      <div style={{ height: 3, background: 'var(--brand)' }} />
+      <div className="max-w-2xl mx-auto px-5 sm:px-8">
+        <div className="flex items-center justify-between py-4">
+          <div className="flex items-center gap-2.5">
+            {settings.logoUrl ? (
+              <img src={settings.logoUrl} alt="Logo" className="h-7 w-auto object-contain" />
+            ) : (
+              <span className="text-[15px] font-bold">{storeName}</span>
+            )}
+          </div>
+          <a href={`https://${shop}`} className="text-[12px] text-[#999] hover:text-[#111] flex items-center gap-1">
+            <Icon name="ArrowLeft" size={12} /> {settings.labelBackToStore || 'Back to store'}
+          </a>
+        </div>
+        <main className="pb-10">{children}</main>
+        <div className="text-center text-[11px] text-[#aaa] pb-8 flex items-center justify-center gap-1">
+          <Icon name="Lock" size={10} /> {settings.labelPoweredBy || 'Secured by ReturnFlow'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShellBold({ children, settings, shop, style }: any) {
+  const storeName = settings.portalStoreName || shop.split('.')[0];
+  return (
+    <div className="min-h-screen w-full font-sans" style={{ background: '#F8FAFC', color: '#0f1117', ...style }}>
+      <div style={{ background: 'var(--brand)', padding: '20px 24px 36px' }}>
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2.5">
+              {settings.logoUrl ? (
+                <img src={settings.logoUrl} alt="Logo" className="h-8 w-auto object-contain brightness-[10]" />
+              ) : (
+                <div className="w-9 h-9 rounded-md grid place-content-center font-bold text-[16px]"
+                     style={{ background: 'rgba(255,255,255,0.2)', color: '#fff' }}>
+                  {storeName.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div>
+                <div className="text-[16px] font-bold text-white leading-tight">{storeName}</div>
+                <div className="text-[11px] text-white/60">Return Center</div>
+              </div>
+            </div>
+            <a href={`https://${shop}`} className="text-[12px] text-white/70 hover:text-white flex items-center gap-1.5">
+              <Icon name="ArrowLeft" size={12} /> {settings.labelBackToStore || 'Back to store'}
+            </a>
+          </div>
+        </div>
+      </div>
+      <div className="max-w-3xl mx-auto px-5 sm:px-8" style={{ marginTop: -20 }}>
+        <main className="pb-10">{children}</main>
+        <div className="text-center text-[12px] text-[#888] pb-8">
+          Need help? <a className="underline cursor-pointer" style={{ color: 'var(--brand)' }}>{settings.footerContact || `support@${shop}`}</a>
+          <div className="mt-1.5 flex items-center justify-center gap-1.5 text-[11px] text-[#aaa]">
+            <Icon name="Lock" size={11} /> {settings.labelPoweredBy || 'Secured by ReturnFlow'}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShellSidebar({ children, settings, shop, style, steps, stepperCurrent }: any) {
+  const storeName  = settings.portalStoreName || shop.split('.')[0];
+  const allSteps   = steps || ['Find Order', 'Select Items', 'Reason', 'Refund Type', 'Confirm'];
+  const current    = stepperCurrent || 1;
+
+  return (
+    <div className="min-h-screen w-full font-sans flex" style={{ color: '#0f1117', ...style }}>
+      {/* Sidebar */}
+      <aside className="w-64 shrink-0 hidden sm:flex flex-col border-r border-[#e6e6ec]" style={{ background: '#fff' }}>
+        <div className="p-6">
+          <div className="flex items-center gap-2.5 mb-8">
+            {settings.logoUrl ? (
+              <img src={settings.logoUrl} alt="Logo" className="h-8 w-auto object-contain" />
+            ) : (
+              <div className="w-9 h-9 rounded-md grid place-content-center text-white font-bold"
+                   style={{ background: 'var(--brand)' }}>
+                {storeName.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div>
+              <div className="text-[14px] font-bold leading-tight">{storeName}</div>
+              <div className="text-[11px] text-[#888]">Return Center</div>
+            </div>
+          </div>
+          <div className="text-[11px] uppercase tracking-wide text-[#aaa] font-semibold mb-4">Your return</div>
+          {/* Vertical step list */}
+          <div className="space-y-0">
+            {allSteps.map((label: string, i: number) => {
+              const idx  = i + 1;
+              const done = idx < current;
+              const curr = idx === current;
+              return (
+                <div key={label} className="flex items-start gap-2.5">
+                  <div className="flex flex-col items-center">
+                    <div className="w-7 h-7 rounded-full grid place-content-center text-[11px] font-semibold shrink-0 transition"
+                         style={{ background: done ? 'var(--brand)' : curr ? '#0f1117' : '#f0f0f5', color: done || curr ? '#fff' : '#aaa' }}>
+                      {done ? <Icon name="Check" size={12} strokeWidth={3} /> : idx}
+                    </div>
+                    {i < allSteps.length - 1 && (
+                      <div className="w-px flex-1 min-h-[24px] my-1" style={{ background: done ? 'var(--brand)' : '#e6e6ec' }} />
+                    )}
+                  </div>
+                  <div className="pt-1 pb-5">
+                    <div className={`text-[13px] font-medium ${curr ? 'text-[#0f1117]' : done ? 'text-[#0f1117]' : 'text-[#aaa]'}`}>{label}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="mt-auto p-6 border-t border-[#e6e6ec]">
+          <a href={`https://${shop}`} className="text-[12px] text-[#666] hover:text-[#111] flex items-center gap-1.5">
+            <Icon name="ArrowLeft" size={12} /> {settings.labelBackToStore || 'Back to store'}
+          </a>
+          <div className="mt-3 text-[11px] text-[#aaa] flex items-center gap-1">
+            <Icon name="Lock" size={10} /> {settings.labelPoweredBy || 'Secured by ReturnFlow'}
+          </div>
+        </div>
+      </aside>
+
+      {/* Main */}
+      <div className="flex-1 min-w-0" style={{ background: '#F8FAFC' }}>
+        {/* Mobile header */}
+        <div className="sm:hidden flex items-center justify-between px-5 h-14 border-b border-[#e6e6ec] bg-white">
+          <div className="text-[14px] font-bold">{storeName}</div>
+          <a href={`https://${shop}`} className="text-[12px] text-[#666] flex items-center gap-1">
+            <Icon name="ArrowLeft" size={12} /> {settings.labelBackToStore || 'Back to store'}
+          </a>
+        </div>
+        <main className="px-6 sm:px-10 py-8 max-w-2xl">{children}</main>
+      </div>
+    </div>
+  );
+}
+
+function ShellCompact({ children, settings, shop, style }: any) {
+  const storeName = settings.portalStoreName || shop.split('.')[0];
+  const headerBg  = settings.bannerColor || '#fff';
+  return (
+    <div className="min-h-screen w-full font-sans" style={{ background: '#F8FAFC', color: '#0f1117', ...style }}>
+      <header style={{ background: headerBg, borderBottom: '1px solid #e6e6ec' }}>
+        <div className="max-w-2xl mx-auto px-4 h-12 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {settings.logoUrl ? (
+              <img src={settings.logoUrl} alt="Logo" className="h-7 w-auto object-contain" />
+            ) : (
+              <div className="w-7 h-7 rounded grid place-content-center text-white font-bold text-[11px]"
+                   style={{ background: 'var(--brand)' }}>
+                {storeName.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <span className="text-[13px] font-semibold">{storeName}</span>
+          </div>
+          <a href={`https://${shop}`} className="text-[11.5px] text-[#888] hover:text-[#111] flex items-center gap-1">
+            <Icon name="ArrowLeft" size={11} /> {settings.labelBackToStore || 'Back to store'}
+          </a>
+        </div>
+      </header>
+      <main className="max-w-2xl mx-auto px-4 sm:px-6 py-6">{children}</main>
     </div>
   );
 }
@@ -649,7 +877,7 @@ function Stepper({ steps, current, onJump }: any) {
               <div className={`w-7 h-7 rounded-full grid place-content-center text-[12px] font-semibold transition ${
                 isDone ? 'text-white' : isCurr ? 'text-white' : 'text-[#aaa]'
               }`} style={{
-                background: isDone ? '#6C63FF' : isCurr ? '#0f1117' : '#fff',
+                background: isDone ? 'var(--brand)' : isCurr ? '#0f1117' : '#fff',
                 border: isDone ? 'none' : isCurr ? 'none' : '1.5px solid #d8dce5'
               }}>
                 {isDone ? <Icon name="Check" size={13} strokeWidth={3} /> : idx}
@@ -657,7 +885,7 @@ function Stepper({ steps, current, onJump }: any) {
               <span className={`text-[12.5px] font-medium hidden sm:inline ${isCurr ? 'text-[#0f1117]' : isDone ? 'text-[#0f1117]' : 'text-[#aaa]'}`}>{s}</span>
             </button>
             {i < steps.length - 1 && (
-              <div className="flex-1 h-px" style={{ background: idx < current ? '#6C63FF' : '#e6e6ec' }} />
+              <div className="flex-1 h-px" style={{ background: idx < current ? 'var(--brand)' : '#e6e6ec' }} />
             )}
           </React.Fragment>
         );
@@ -683,7 +911,7 @@ function PortalBtn({ variant = 'primary', children, full, onClick, disabled, ico
     ghost: 'text-[#666] hover:text-[#111] bg-transparent hover:bg-[#f0f0f5]',
     outline: 'border border-[#d8dce5] bg-white text-[#111] hover:bg-[#f8fafc]',
   };
-  const style = variant === 'primary' ? { background: '#6C63FF' } : {};
+  const style = variant === 'primary' ? { background: 'var(--brand)' } : {};
   return (
     <button onClick={onClick} disabled={disabled} style={style}
       className={`${base} ${map[variant]} ${full ? 'w-full' : ''}`}>
@@ -694,7 +922,7 @@ function PortalBtn({ variant = 'primary', children, full, onClick, disabled, ico
   );
 }
 
-function StepFindOrder({ orderNum, setOrderNum, email, setEmail, onNext, canContinue, isLoading, error, shop, fetcher, trackingSubmitted, onTrackingReset }: any) {
+function StepFindOrder({ orderNum, setOrderNum, email, setEmail, onNext, canContinue, isLoading, error, shop, shopSettings, fetcher, trackingSubmitted, onTrackingReset }: any) {
   const [showTracking, setShowTracking] = useState(false);
   const [tRma, setTRma] = useState('');
   const [tEmail, setTEmail] = useState('');
@@ -719,7 +947,7 @@ function StepFindOrder({ orderNum, setOrderNum, email, setEmail, onNext, canCont
         </div>
         <h2 className="text-[20px] font-bold text-[#0f1117]">Tracking submitted!</h2>
         <p className="text-[13.5px] text-[#666] mt-2 max-w-xs mx-auto">Your carrier and tracking number have been saved. We'll update you when we receive your package.</p>
-        <button onClick={onTrackingReset} className="mt-6 text-[13px] font-semibold" style={{ color: '#6C63FF' }}>
+        <button onClick={onTrackingReset} className="mt-6 text-[13px] font-semibold" style={{ color: 'var(--brand)' }}>
           Submit another return
         </button>
       </div>
@@ -729,9 +957,9 @@ function StepFindOrder({ orderNum, setOrderNum, email, setEmail, onNext, canCont
   return (
     <div>
       <div className="text-[11.5px] uppercase tracking-wider text-[#888] mb-1.5 font-semibold">Step 1</div>
-      <h2 className="text-[22px] font-bold text-[#0f1117] tracking-tight">Find your order</h2>
+      <h2 className="text-[22px] font-bold text-[#0f1117] tracking-tight">{shopSettings?.labelFindOrder || 'Find your order'}</h2>
       <p className="text-[13.5px] text-[#666] mt-1.5 leading-relaxed">
-        Enter your order number and the email used at checkout. We'll pull it up in a moment.
+        {shopSettings?.descFindOrder || 'Enter your order number and the email used at checkout.'}
       </p>
 
       {error && (
@@ -746,9 +974,9 @@ function StepFindOrder({ orderNum, setOrderNum, email, setEmail, onNext, canCont
       </div>
 
       <div className="mt-6 flex items-center justify-between">
-        <a href={`mailto:support@${shop}`} className="text-[12.5px] text-[#6C63FF] hover:underline cursor-pointer">Can't find your order?</a>
+        <a href={`mailto:support@${shop}`} className="text-[12.5px] hover:underline cursor-pointer" style={{ color: 'var(--brand)' }}>{shopSettings?.labelCantFind || "Can't find your order?"}</a>
         <PortalBtn onClick={onNext} disabled={!canContinue || isLoading} iconRight={isLoading ? undefined : "ArrowRight"}>
-          {isLoading ? 'Searching...' : 'Find Order'}
+          {isLoading ? 'Searching...' : (shopSettings?.labelCta || 'Find Order')}
         </PortalBtn>
       </div>
 
@@ -758,7 +986,7 @@ function StepFindOrder({ orderNum, setOrderNum, email, setEmail, onNext, canCont
           className="w-full flex items-center justify-between text-[13px] font-medium text-[#444] hover:text-[#111] transition">
           <span className="flex items-center gap-2">
             <Icon name="Truck" size={15} />
-            Already shipped your return? Submit tracking
+            {shopSettings?.labelTrackingToggle || 'Already shipped your return? Submit tracking'}
           </span>
           <Icon name={showTracking ? "ChevronUp" : "ChevronDown"} size={14} />
         </button>
@@ -788,7 +1016,7 @@ function StepFindOrder({ orderNum, setOrderNum, email, setEmail, onNext, canCont
   );
 }
 
-function StepSelectItems({ items, orderName, date, isFulfilled, selectedItems, setSelectedItems, onBack, onNext, canContinue }: any) {
+function StepSelectItems({ items, orderName, date, isFulfilled, shopSettings, selectedItems, setSelectedItems, onBack, onNext, canContinue }: any) {
   const toggleItem = (id: string, blocked: boolean) => {
     if (blocked) return;
     setSelectedItems((s: any) => {
@@ -804,9 +1032,9 @@ function StepSelectItems({ items, orderName, date, isFulfilled, selectedItems, s
   return (
     <div>
       <div className="text-[11.5px] uppercase tracking-wider text-[#888] mb-1.5 font-semibold">Step 2</div>
-      <h2 className="text-[22px] font-bold text-[#0f1117] tracking-tight">Select items to return</h2>
+      <h2 className="text-[22px] font-bold text-[#0f1117] tracking-tight">{shopSettings?.labelSelectItems || 'Select items to return'}</h2>
       <p className="text-[13.5px] text-[#666] mt-1.5">
-        From order <span className="font-semibold text-[#0f1117]">{orderName}</span> · placed {new Date(date).toLocaleDateString()}.
+        {shopSettings?.descSelectItems || "Select the items you'd like to return."} From order <span className="font-semibold text-[#0f1117]">{orderName}</span> · placed {new Date(date).toLocaleDateString()}.
       </p>
 
       {!isFulfilled && (
@@ -824,16 +1052,12 @@ function StepSelectItems({ items, orderName, date, isFulfilled, selectedItems, s
           return (
             <label key={item.id}
                    className={`flex items-center gap-4 p-4 rounded-xl border-2 transition ${
-                     blocked
-                       ? 'border-[#e6e6ec] opacity-50 cursor-not-allowed'
-                       : sel
-                       ? 'border-[#6C63FF] bg-[#6C63FF]/[0.04] cursor-pointer'
-                       : 'border-[#e6e6ec] hover:border-[#cfd3df] cursor-pointer'
-                   }`}>
+                     blocked ? 'border-[#e6e6ec] opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                   }`}
+                   style={!blocked && sel ? { borderColor: 'var(--brand)', background: 'color-mix(in srgb, var(--brand) 4%, transparent)' } : !blocked ? { borderColor: '#e6e6ec' } : {}}>
               <input type="checkbox" checked={sel} onChange={() => toggleItem(item.id, blocked)} className="sr-only" disabled={blocked} />
-              <div className={`w-5 h-5 rounded-md grid place-content-center shrink-0 transition ${
-                blocked ? 'bg-[#e6e6ec]' : sel ? 'bg-[#6C63FF]' : 'bg-white border-2 border-[#d8dce5]'
-              }`}>
+              <div className={`w-5 h-5 rounded-md grid place-content-center shrink-0 transition`}
+                   style={blocked ? { background: '#e6e6ec' } : sel ? { background: 'var(--brand)' } : { background: '#fff', border: '2px solid #d8dce5' }}>
                 {blocked ? <Icon name="Ban" size={11} className="text-[#999]" /> : sel && <Icon name="Check" size={12} className="text-white" strokeWidth={3.5} />}
               </div>
               <div className="w-16 h-16 rounded-lg grid place-content-center shrink-0 border border-[#e6e6ec] bg-[#f8fafc] overflow-hidden">
@@ -869,13 +1093,13 @@ function StepSelectItems({ items, orderName, date, isFulfilled, selectedItems, s
   );
 }
 
-function StepReasons({ itemsList, reasons, setReasons, notes, setNotes, exchangeNote, setExchangeNote, refundType, onBack, onNext, canContinue, totalSteps, reasonOptions }: any) {
+function StepReasons({ itemsList, reasons, setReasons, notes, setNotes, onBack, onNext, canContinue, totalSteps, shopSettings, reasonOptions }: any) {
   return (
     <div>
       <div className="text-[11.5px] uppercase tracking-wider text-[#888] mb-1.5 font-semibold">Step 3 of {totalSteps}</div>
-      <h2 className="text-[22px] font-bold text-[#0f1117] tracking-tight">Tell us why</h2>
+      <h2 className="text-[22px] font-bold text-[#0f1117] tracking-tight">{shopSettings?.labelReasons || 'Tell us why'}</h2>
       <p className="text-[13.5px] text-[#666] mt-1.5">
-        Help us make it right. Pick a reason for each item.
+        {shopSettings?.descReasons || 'Help us understand why you\'re returning each item.'}
       </p>
 
       <div className="mt-6 space-y-4">
@@ -915,18 +1139,6 @@ function StepReasons({ itemsList, reasons, setReasons, notes, setNotes, exchange
         ))}
       </div>
 
-      {refundType === 'EXCHANGE' && (
-        <div className="mt-4 p-4 rounded-xl border border-[#3B82F630] bg-[#3B82F608]">
-          <label className="block text-[12.5px] font-semibold text-[#3B82F6] mb-1 flex items-center gap-1.5">
-            <Icon name="RefreshCw" size={13} /> What would you like instead?
-          </label>
-          <p className="text-[12px] text-[#666] mb-2">Describe the item, size, or color you'd like us to send as a replacement.</p>
-          <textarea rows={2} value={exchangeNote} onChange={e => setExchangeNote(e.target.value)}
-            placeholder="e.g. Same shirt in Size M, Blue color"
-            className="w-full px-3.5 py-2.5 rounded-lg border border-[#d8dce5] bg-white text-[13px] resize-none focus:outline-none focus:border-[#3B82F6] focus:ring-4 focus:ring-[#3B82F6]/15 transition" />
-        </div>
-      )}
-
       <div className="mt-6 flex items-center justify-between">
         <PortalBtn variant="ghost" onClick={onBack} icon="ArrowLeft">Back</PortalBtn>
         <PortalBtn onClick={onNext} disabled={!canContinue} iconRight="ArrowRight">Continue</PortalBtn>
@@ -935,7 +1147,7 @@ function StepReasons({ itemsList, reasons, setReasons, notes, setNotes, exchange
   );
 }
 
-function StepRefundType({ availableRefundTypes, refundType, setRefundType, totalRefund, shopSettings, onBack, onNext, canContinue, totalSteps }: any) {
+function StepRefundType({ availableRefundTypes, refundType, setRefundType, exchangeNote, setExchangeNote, totalRefund, shopSettings, onBack, onNext, canContinue, totalSteps }: any) {
   const showBonus = shopSettings.incentivizeStoreCredit && shopSettings.storeCreditBonusPercent > 0;
   const bonusPct  = shopSettings.storeCreditBonusPercent;
   const bonusAmount = totalRefund * (bonusPct / 100);
@@ -946,29 +1158,27 @@ function StepRefundType({ availableRefundTypes, refundType, setRefundType, total
       title: 'Refund to original payment',
       desc:  'Refunded to your original payment method within 5–10 business days.',
       badge: null,
-      foot:  null,
     },
     STORE_CREDIT: {
       icon: 'Gift',
       title: 'Store credit',
       desc:  'Get store credit to use on your next purchase. Available instantly.',
-      badge: { label: '⚡ Instant', kind: 'accent' },
+      badge: { icon: 'Zap', label: 'Instant', kind: 'accent' },
       bonusBadge: showBonus ? { label: `+${bonusPct}% bonus credit`, amount: `Get $${(totalRefund + bonusAmount).toFixed(2)} instead of $${totalRefund.toFixed(2)}` } : null,
     },
     EXCHANGE: {
       icon: 'RefreshCw',
       title: 'Exchange for another item',
       desc:  "We'll send you a replacement once we receive your return.",
-      badge: { label: '🔄 Recommended', kind: 'info' },
-      foot:  "You'll select your replacement item after submitting.",
+      badge: { icon: 'Star', label: 'Recommended', kind: 'info' },
     },
   };
 
   return (
     <div>
       <div className="text-[11.5px] uppercase tracking-wider text-[#888] mb-1.5 font-semibold">Step 4 of {totalSteps}</div>
-      <h2 className="text-[22px] font-bold text-[#0f1117] tracking-tight">How would you like to be refunded?</h2>
-      <p className="text-[13.5px] text-[#666] mt-1.5">Choose the option that works best for you.</p>
+      <h2 className="text-[22px] font-bold text-[#0f1117] tracking-tight">{shopSettings?.labelRefundType || 'How would you like to be refunded?'}</h2>
+      <p className="text-[13.5px] text-[#666] mt-1.5">{shopSettings?.descRefundType || 'Choose the option that works best for you.'}</p>
 
       <div className="mt-6 space-y-3" role="radiogroup" aria-label="Refund method">
         {availableRefundTypes.map((key: string) => {
@@ -980,22 +1190,20 @@ function StepRefundType({ availableRefundTypes, refundType, setRefundType, total
                     aria-checked={selected}
                     tabIndex={0}
                     onClick={() => setRefundType(key)}
-                    className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-150 relative group cursor-pointer focus:outline-none focus-visible:ring-4 focus-visible:ring-[#6C63FF]/20 ${
-                      selected
-                        ? 'border-[#6C63FF] bg-[#6C63FF]/[0.04]'
-                        : 'border-[#e6e6ec] bg-white hover:border-[#cfd3df]'
-                    }`}>
+                    className="w-full text-left p-4 rounded-xl border-2 transition-all duration-150 relative group cursor-pointer focus:outline-none"
+                    style={selected
+                      ? { borderColor: 'var(--brand)', background: 'color-mix(in srgb, var(--brand) 4%, #fff)' }
+                      : { borderColor: '#e6e6ec', background: '#fff' }}>
               {selected && (
-                <div className="absolute top-3 right-3 w-6 h-6 rounded-full grid place-content-center shadow-[0_2px_8px_rgba(108,99,255,0.4)]"
-                     style={{ background: '#6C63FF' }}>
+                <div className="absolute top-3 right-3 w-6 h-6 rounded-full grid place-content-center"
+                     style={{ background: 'var(--brand)' }}>
                   <Icon name="Check" size={13} strokeWidth={3.5} className="text-white" />
                 </div>
               )}
 
               <div className="flex items-start gap-4">
-                <div className={`w-11 h-11 rounded-lg grid place-content-center shrink-0 transition-colors ${
-                  selected ? 'text-white' : 'text-[#444]'
-                }`} style={{ background: selected ? '#6C63FF' : '#f0f0f5' }}>
+                <div className="w-11 h-11 rounded-lg grid place-content-center shrink-0 transition-colors"
+                     style={{ background: selected ? 'var(--brand)' : '#f0f0f5', color: selected ? '#fff' : '#444' }}>
                   <Icon name={opt.icon} size={18} />
                 </div>
 
@@ -1003,10 +1211,11 @@ function StepRefundType({ availableRefundTypes, refundType, setRefundType, total
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[14.5px] font-bold text-[#0f1117]">{opt.title}</span>
                     {opt.badge && (
-                      <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full tracking-wide"
+                      <span className="inline-flex items-center gap-1 text-[10.5px] font-bold px-2 py-0.5 rounded-full tracking-wide"
                             style={opt.badge.kind === 'accent'
-                              ? { background: '#6C63FF', color: 'white' }
+                              ? { background: 'var(--brand)', color: 'white' }
                               : { background: '#3B82F615', color: '#3B82F6' }}>
+                        <Icon name={opt.badge.icon} size={10} strokeWidth={2.5} />
                         {opt.badge.label}
                       </span>
                     )}
@@ -1020,7 +1229,7 @@ function StepRefundType({ availableRefundTypes, refundType, setRefundType, total
                   <div className="text-[12.5px] text-[#666] mt-1 leading-relaxed">{opt.desc}</div>
                   {key === 'STORE_CREDIT' && opt.bonusBadge && (
                      <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11.5px] font-semibold"
-                          style={{ background: 'rgba(108,99,255,0.10)', color: '#6C63FF' }}>
+                          style={{ background: 'color-mix(in srgb, var(--brand) 10%, transparent)', color: 'var(--brand)' }}>
                        <Icon name="Sparkles" size={11} /> {opt.bonusBadge.amount}
                      </div>
                   )}
@@ -1030,6 +1239,18 @@ function StepRefundType({ availableRefundTypes, refundType, setRefundType, total
           );
         })}
       </div>
+
+      {refundType === 'EXCHANGE' && (
+        <div className="mt-4 p-4 rounded-xl border border-[#3B82F630] bg-[#3B82F608]">
+          <label className="block text-[12.5px] font-semibold text-[#3B82F6] mb-1 flex items-center gap-1.5">
+            <Icon name="RefreshCw" size={13} /> What would you like instead?
+          </label>
+          <p className="text-[12px] text-[#666] mb-2">Describe the item, size, or color you'd like us to send as a replacement.</p>
+          <textarea rows={2} value={exchangeNote} onChange={(e: any) => setExchangeNote(e.target.value)}
+            placeholder="e.g. Same shirt in Size L, Blue color"
+            className="w-full px-3.5 py-2.5 rounded-lg border border-[#d8dce5] bg-white text-[13px] resize-none focus:outline-none focus:border-[#3B82F6] focus:ring-4 focus:ring-[#3B82F6]/15 transition" />
+        </div>
+      )}
 
       <div className="mt-6 flex items-center justify-between">
         <PortalBtn variant="ghost" onClick={onBack} icon="ArrowLeft">Back</PortalBtn>
@@ -1048,8 +1269,8 @@ function StepConfirm({ itemsList, selectedItems, reasons, notes, totalRefund, on
   return (
     <div>
       <div className="text-[11.5px] uppercase tracking-wider text-[#888] mb-1.5 font-semibold">Step {totalSteps} of {totalSteps}</div>
-      <h2 className="text-[22px] font-bold text-[#0f1117] tracking-tight">Review & submit</h2>
-      <p className="text-[13.5px] text-[#666] mt-1.5">One last look before we send this.</p>
+      <h2 className="text-[22px] font-bold text-[#0f1117] tracking-tight">{shopSettings?.labelConfirm || 'Review & submit'}</h2>
+      <p className="text-[13.5px] text-[#666] mt-1.5">{shopSettings?.descConfirm || 'One last look before we send this.'}</p>
 
       <div className="mt-6 space-y-3">
         {itemsList.map((item: any) => (
@@ -1080,7 +1301,7 @@ function StepConfirm({ itemsList, selectedItems, reasons, notes, totalRefund, on
         <div className="flex justify-between text-[13px] text-[#666]"><span>Subtotal</span><span className="tabular-nums">${totalRefund.toFixed(2)}</span></div>
         <div className="flex justify-between text-[13px] text-[#666] mt-1"><span>Restocking fee</span><span className="tabular-nums">−$0.00</span></div>
         {showBonus && (
-          <div className="flex justify-between text-[13px] mt-1" style={{ color: '#6C63FF' }}>
+          <div className="flex justify-between text-[13px] mt-1" style={{ color: 'var(--brand)' }}>
             <span className="flex items-center gap-1"><Icon name="Sparkles" size={11} /> Store credit bonus (+{shopSettings.storeCreditBonusPercent}%)</span>
             <span className="tabular-nums">+${bonusAmount.toFixed(2)}</span>
           </div>
@@ -1106,14 +1327,14 @@ function StepConfirm({ itemsList, selectedItems, reasons, notes, totalRefund, on
       <div className="mt-6 flex items-center justify-between gap-3">
         <PortalBtn variant="ghost" onClick={onBack} icon="ArrowLeft">Back</PortalBtn>
         <PortalBtn onClick={onSubmit} full={false} icon={isLoading ? undefined : "CircleCheck"} disabled={isLoading}>
-          {isLoading ? 'Submitting...' : 'Submit Return Request'}
+          {isLoading ? 'Submitting...' : (shopSettings?.labelSubmit || 'Submit Return Request')}
         </PortalBtn>
       </div>
     </div>
   );
 }
 
-function PortalConfirmation({ rma, email, refundType, onReset }: any) {
+function PortalConfirmation({ rma, email, refundType, settings, onReset }: any) {
   const isExchange = refundType === 'EXCHANGE';
   const isStoreCredit = refundType === 'STORE_CREDIT';
 
@@ -1160,15 +1381,15 @@ function PortalConfirmation({ rma, email, refundType, onReset }: any) {
           {steps.map((step, i) => (
             <div key={i} className="flex gap-3">
               <div className="w-6 h-6 rounded-full grid place-content-center shrink-0 text-white text-[10px] font-bold"
-                   style={{ background: '#6C63FF' }}>{i + 1}</div>
+                   style={{ background: 'var(--brand)' }}>{i + 1}</div>
               <div className="text-[#444]">{step}</div>
             </div>
           ))}
         </div>
       </div>
 
-      <button onClick={onReset} className="mt-6 text-[13px] font-semibold" style={{ color: '#6C63FF' }}>
-        Start another return
+      <button onClick={onReset} className="mt-6 text-[13px] font-semibold" style={{ color: 'var(--brand)' }}>
+        {settings?.labelStartAnother || 'Start another return'}
       </button>
     </div>
   );

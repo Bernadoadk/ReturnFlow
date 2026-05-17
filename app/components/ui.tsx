@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import { icons } from 'lucide-react';
-import { Link, useLocation } from 'react-router';
+import { Link, useLocation, useFetcher } from 'react-router';
 
 // ---- Icon wrapper around lucide-react ----
 export function Icon({ name, size = 16, className = '', strokeWidth = 2, style }: any) {
@@ -182,11 +182,13 @@ export function Card({ title, subtitle, action, children, className = '', paddin
 
 // ---- Sidebar ----
 export const NAV = [
-  { key: 'dashboard', path: '/app', label: 'Dashboard', icon: 'LayoutDashboard' },
-  { key: 'returns',   path: '/app/returns', label: 'Returns',   icon: 'Package',     badge: 'pending' },
-  { key: 'analytics', path: '/app/analytics', label: 'Analytics', icon: 'ChartLine' },
-  { key: 'settings',  path: '/app/settings', label: 'Settings',  icon: 'Settings' },
-  { key: 'billing',   path: '/app/billing', label: 'Billing',   icon: 'CreditCard' },
+  { key: 'dashboard',     path: '/app',                label: 'Dashboard',     icon: 'LayoutDashboard' },
+  { key: 'returns',       path: '/app/returns',        label: 'Returns',       icon: 'Package', badge: 'pending' },
+  { key: 'analytics',     path: '/app/analytics',      label: 'Analytics',     icon: 'ChartLine' },
+  { key: 'portal-editor',    path: '/app/portal-editor',    label: 'Portal Editor',    icon: 'Paintbrush' },
+  { key: 'email-templates',  path: '/app/email-templates',  label: 'Email Templates',  icon: 'Mail' },
+  { key: 'settings',         path: '/app/settings',         label: 'Settings',         icon: 'Settings' },
+  { key: 'billing',       path: '/app/billing',        label: 'Billing',       icon: 'CreditCard' },
 ];
 
 export function Sidebar({ pendingCount, shop }: any) {
@@ -267,6 +269,225 @@ export function PageHeader({ title, subtitle, right }: any) {
         {subtitle && <div className="text-[13px] text-muted mt-1">{subtitle}</div>}
       </div>
       {right && <div className="flex items-center gap-2 flex-wrap">{right}</div>}
+    </div>
+  );
+}
+
+// ---- ColorPicker ----
+const COLOR_PRESETS = [
+  '#6C63FF', '#3B82F6', '#8B5CF6', '#EC4899',
+  '#10B981', '#F59E0B', '#EF4444', '#0F172A',
+  '#14B8A6', '#F97316', '#06B6D4', '#64748B',
+];
+
+export function ColorPicker({ label, hint, value, onChange, presets }: {
+  label?: string;
+  hint?: string;
+  value: string;
+  onChange: (v: string) => void;
+  presets?: string[];
+}) {
+  const swatches = presets ?? COLOR_PRESETS;
+  const isValid  = /^#[0-9A-Fa-f]{6}$/.test(value);
+
+  return (
+    <div>
+      {label && <div className="text-[12px] font-semibold text-ink mb-0.5">{label}</div>}
+      {hint  && <div className="text-[11px] text-muted mb-2">{hint}</div>}
+
+      <div className="flex items-center gap-2 mb-3">
+        {/* Swatch → opens native color picker */}
+        <label className="relative cursor-pointer shrink-0 group">
+          <div
+            className="w-9 h-9 rounded-lg border-2 border-border shadow-sm group-hover:ring-2 group-hover:ring-accent/40 transition"
+            style={{ background: isValid ? value : '#888' }}
+          />
+          <input
+            type="color"
+            value={isValid ? value : '#000000'}
+            onChange={e => onChange(e.target.value)}
+            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+          />
+        </label>
+
+        {/* Hex input */}
+        <div className="relative">
+          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[12px] font-mono text-faint select-none">#</span>
+          <input
+            type="text"
+            value={value.replace(/^#/, '')}
+            maxLength={6}
+            placeholder="6C63FF"
+            spellCheck={false}
+            onChange={e => {
+              const raw = e.target.value.replace(/[^0-9A-Fa-f]/g, '');
+              onChange('#' + raw);
+            }}
+            className="w-[88px] h-9 pl-6 pr-2 rounded-lg border border-border bg-bg text-[13px] font-mono text-ink placeholder:text-faint focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition"
+          />
+        </div>
+
+        {isValid && (
+          <span className="text-[10.5px] font-mono text-muted hidden sm:inline">{value.toUpperCase()}</span>
+        )}
+      </div>
+
+      {/* Preset swatches */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {swatches.map(c => {
+          const active = value.toLowerCase() === c.toLowerCase();
+          return (
+            <button
+              key={c}
+              type="button"
+              title={c}
+              onClick={() => onChange(c)}
+              className={`w-6 h-6 rounded-md transition-all ${
+                active
+                  ? 'scale-110 ring-2 ring-offset-1 ring-offset-surface ring-accent'
+                  : 'hover:scale-105 hover:ring-1 hover:ring-muted/60'
+              }`}
+              style={{ background: c }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---- CloudinaryLogoUploader ----
+const LOGO_ACCEPTED = ['image/png', 'image/svg+xml', 'image/jpeg', 'image/webp'];
+const LOGO_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
+
+export function CloudinaryLogoUploader({ value, onUpload, onRemove }: {
+  value: string;
+  onUpload: (url: string) => void;
+  onRemove: () => void;
+}) {
+  const fetcher    = useFetcher<any>();
+  const inputRef   = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [error, setError]           = useState('');
+
+  const isUploading = fetcher.state !== 'idle';
+
+  useEffect(() => {
+    if (fetcher.state === 'idle' && fetcher.data) {
+      if (fetcher.data.logoUrl) onUpload(fetcher.data.logoUrl);
+      if (fetcher.data.removed)  onRemove();
+    }
+  }, [fetcher.state, fetcher.data]);
+
+  const processFile = useCallback((file: File) => {
+    setError('');
+    if (!LOGO_ACCEPTED.includes(file.type)) {
+      setError('Unsupported format. Use PNG, SVG, JPG or WebP.');
+      return;
+    }
+    if (file.size > LOGO_MAX_BYTES) {
+      setError('File too large (max 2 MB). Try a smaller image or SVG.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = e => {
+      const fd = new FormData();
+      fd.append('intent', 'upload_logo');
+      fd.append('base64', e.target?.result as string);
+      fd.append('previousUrl', value);
+      fetcher.submit(fd, { method: 'POST' });
+    };
+    reader.readAsDataURL(file);
+  }, [value, fetcher]);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+  }, [processFile]);
+
+  const handleRemove = () => {
+    const fd = new FormData();
+    fd.append('intent', 'remove_logo');
+    fd.append('logoUrl', value);
+    fetcher.submit(fd, { method: 'POST' });
+  };
+
+  return (
+    <div>
+      <div className="text-[12px] font-semibold text-ink mb-1">Logo</div>
+      <div className="text-[11px] text-muted mb-2">PNG, SVG, JPG, WebP — max 2 MB. Stored on Cloudinary.</div>
+
+      {/* Existing logo preview */}
+      {value && (
+        <div className="flex items-center gap-3 mb-3 p-3 rounded-lg border border-border bg-white">
+          <img src={value} alt="Logo" className="h-10 w-auto max-w-[140px] object-contain"
+               onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          <div className="flex-1" />
+          <button type="button" onClick={() => inputRef.current?.click()} disabled={isUploading}
+                  className="h-7 px-2.5 rounded text-[11.5px] font-medium border border-border bg-bg hover:bg-surface transition flex items-center gap-1 disabled:opacity-50">
+            <Icon name="RefreshCw" size={11} /> Change
+          </button>
+          <button type="button" onClick={handleRemove} disabled={isUploading}
+                  className="h-7 w-7 rounded border border-border bg-bg hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition flex items-center justify-center disabled:opacity-50">
+            <Icon name="X" size={12} />
+          </button>
+        </div>
+      )}
+
+      {/* Drop zone — shown when no logo or uploading */}
+      {!value && (
+        <div
+          role="button" tabIndex={0}
+          onClick={() => !isUploading && inputRef.current?.click()}
+          onKeyDown={e => e.key === 'Enter' && !isUploading && inputRef.current?.click()}
+          onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+          onDragEnter={e => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={onDrop}
+          className={`flex flex-col items-center justify-center gap-2 h-24 rounded-xl border-2 border-dashed transition-all select-none ${
+            isUploading ? 'border-accent/50 bg-accent/5' :
+            isDragging  ? 'border-accent bg-accent/8 scale-[1.01]' :
+                          'border-divider hover:border-accent/50 hover:bg-bg/60 cursor-pointer'
+          }`}
+        >
+          {isUploading ? (
+            <>
+              <Icon name="Loader2" size={20} className="text-accent animate-spin" />
+              <span className="text-[12px] text-muted">Uploading to Cloudinary…</span>
+            </>
+          ) : (
+            <>
+              <div className={`w-8 h-8 rounded-lg grid place-content-center transition ${isDragging ? 'text-accent' : 'text-muted'}`}
+                   style={isDragging ? { background: 'rgba(108,99,255,0.12)' } : { background: 'rgba(0,0,0,0.04)' }}>
+                <Icon name={isDragging ? 'DownloadCloud' : 'Upload'} size={16} />
+              </div>
+              <div className="text-center">
+                <p className="text-[12px] font-medium text-ink">{isDragging ? 'Drop here' : 'Drag logo here'}</p>
+                <p className="text-[11px] text-muted">or <span className="text-accent font-semibold">browse</span></p>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Upload loading overlay when logo exists */}
+      {value && isUploading && (
+        <div className="mt-2 flex items-center gap-2 text-[11.5px] text-muted">
+          <Icon name="Loader2" size={12} className="animate-spin text-accent" />
+          Uploading to Cloudinary…
+        </div>
+      )}
+
+      <input ref={inputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp"
+             className="sr-only" onChange={e => { const f = e.target.files?.[0]; if (f) processFile(f); e.target.value = ''; }} />
+
+      {error && (
+        <p className="mt-1.5 text-[11px] text-red-500 flex items-center gap-1">
+          <Icon name="TriangleAlert" size={11} /> {error}
+        </p>
+      )}
     </div>
   );
 }

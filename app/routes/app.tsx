@@ -41,7 +41,7 @@ export default function App() {
       <ToastProvider>
         {/* Global Loading Bar */}
         <div className="fixed top-0 left-0 right-0 h-1 z-[9999] pointer-events-none" style={{ opacity: isLoading ? 1 : 0, transition: 'opacity 0.2s' }}>
-          <div className="h-full bg-accent animate-pulse" style={{ width: isLoading ? '70%' : '100%', transition: 'width 2s cubic-bezier(0.1, 0.8, 0.3, 1)' }} />
+          <div className="h-full" style={{ background: '#3d35b5', width: isLoading ? '70%' : '100%', transition: 'width 2s cubic-bezier(0.1, 0.8, 0.3, 1)' }} />
         </div>
         <div className="min-h-screen flex text-ink">
           <Sidebar pendingCount={pendingCount} shop={shop} />
