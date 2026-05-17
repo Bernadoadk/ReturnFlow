@@ -8,7 +8,9 @@
       "Bash(npx prisma *)",
       "Bash(findstr /V \"shamefully\")",
       "Bash(findstr /V \"next major\")",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(npx shopify *)",
+      "Bash(findstr \"application_url\")"
     ]
   }
 }
