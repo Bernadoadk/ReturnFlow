@@ -75,7 +75,8 @@ model ShopSettings {
 
   // Live chat
   liveChatEnabled         Boolean  @default(true)
-  
+  liveChatIcon            String   @default("MessageCircle")
+
   // Custom reasons
   reasons                 ReturnReason[]
   // Demandes de retour

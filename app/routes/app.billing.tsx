@@ -4,7 +4,7 @@ import { useLoaderData, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { PageHeader, Card, Btn, Icon, useToast } from "../components/ui";
-import { isBillingTestMode, getShopPlan } from "../lib/plan.server";
+import { isBillingTestMode, syncBillingFromShopify } from "../lib/plan.server";
 
 const PLANS = [
   { id: 'free',    name: 'Free',    price: 0,  unit: 'forever', monthlyLimit: 10,
@@ -25,65 +25,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
 
-  // Get or create billing record
-  let billing = await prisma.billingSubscription.findUnique({ where: { shop } });
-  if (!billing) {
-    billing = await prisma.billingSubscription.create({ data: { shop, plan: 'free', status: 'active' } });
-  }
+  // Source of truth = Shopify. This re-queries active subscriptions and
+  // mirrors them into the local DB, so the page always reflects reality
+  // whether the user just approved, declined, cancelled, or never visited
+  // the approval URL at all.
+  const resolvedPlan = await syncBillingFromShopify(admin, shop);
 
-  // When Shopify redirects back after approval, charge_id is in the URL.
-  // Verify the charge status and activate if confirmed.
+  // Detect "just activated" (charge_id in URL + we now have a paid plan) so
+  // we can fire a one-time success toast.
   const url = new URL(request.url);
   const chargeId = url.searchParams.get("charge_id");
-  const pendingPlan = billing.plan; // capture before any update
-  if (chargeId && billing.status === 'pending') {
-    let activated = false;
-    try {
-      const gid = `gid://shopify/AppSubscription/${chargeId}`;
-      const resp = await admin.graphql(
-        `#graphql
-        query CheckSubscription($id: ID!) {
-          node(id: $id) {
-            ... on AppSubscription { id status }
-          }
-        }`,
-        { variables: { id: gid } }
-      );
-      const { data } = await resp.json();
-      const status: string = data?.node?.status ?? '';
-      if (status === 'ACTIVE') {
-        billing = await prisma.billingSubscription.update({
-          where: { shop },
-          data: {
-            plan: pendingPlan,
-            status: 'active',
-            shopifyChargeId: chargeId,
-          },
-        });
-        activated = true;
-      } else if (status === 'DECLINED' || status === 'EXPIRED') {
-        billing = await prisma.billingSubscription.update({
-          where: { shop },
-          data: { plan: 'free', status: 'active', shopifyChargeId: null },
-        });
-        activated = true;
-      }
-    } catch (e) {
-      console.error('[billing] charge verification failed:', e);
-    }
-    // Fallback for test/dev mode: if verification failed or returned no status,
-    // activate the pending plan so features are not left locked.
-    if (!activated && isBillingTestMode()) {
-      try {
-        billing = await prisma.billingSubscription.update({
-          where: { shop },
-          data: { plan: pendingPlan, status: 'active', shopifyChargeId: chargeId },
-        });
-      } catch (e) {
-        console.error('[billing] fallback activation failed:', e);
-      }
-    }
-  }
+  const activated = !!(chargeId && resolvedPlan !== 'free');
 
   // Count this month's returns
   const firstDayOfMonth = new Date();
@@ -94,11 +46,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     where: { shop, createdAt: { gte: firstDayOfMonth } }
   });
 
-  const currentPlan = PLANS.find(p => p.id === billing!.plan) || PLANS[0];
+  const currentPlan = PLANS.find(p => p.id === resolvedPlan) || PLANS[0];
   const limit = currentPlan.monthlyLimit;
 
-  const activated = !!(chargeId && billing.status === 'active');
-  return { billing, usedThisMonth, limit, currentPlan, activated };
+  return { usedThisMonth, limit, currentPlan, activated };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -135,6 +86,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     // Request subscription. In React Router 7 with embedded auth, billing.request()
     // throws a Response (302/401) that contains the Shopify confirmation URL in headers.
+    //
+    // We DON'T write to the local DB here — Shopify hasn't confirmed anything yet.
+    // The DB only gets updated by `syncBillingFromShopify` after the user actually
+    // approves (or doesn't). This avoids stale "pending" rows when the user
+    // cancels the approval page.
     try {
       const response = (await shopifyBilling.request({
         plan: plan.name as any,
@@ -145,36 +101,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       // Some SDK versions return a Response instead of throwing — handle both
       if (response instanceof Response) {
         const url = extractConfirmationUrl(response);
-        if (url) {
-          await prisma.billingSubscription.upsert({
-            where: { shop },
-            create: { shop, plan: planId, status: "pending" },
-            update: { plan: planId, status: "pending" },
-          });
-          return { confirmationUrl: url };
-        }
+        if (url) return { confirmationUrl: url };
       }
       // Legacy shape: { confirmationUrl, appSubscription }
       if (response?.confirmationUrl) {
-        await prisma.billingSubscription.upsert({
-          where: { shop },
-          create: { shop, plan: planId, status: "pending", shopifyChargeId: response.appSubscription?.id },
-          update: { plan: planId, status: "pending", shopifyChargeId: response.appSubscription?.id },
-        });
         return { confirmationUrl: response.confirmationUrl };
       }
       return { error: "Could not start subscription — no confirmation URL returned." };
     } catch (error) {
       if (error instanceof Response) {
         const url = await extractConfirmationUrlAsync(error);
-        if (url) {
-          await prisma.billingSubscription.upsert({
-            where: { shop },
-            create: { shop, plan: planId, status: "pending" },
-            update: { plan: planId, status: "pending" },
-          });
-          return { confirmationUrl: url };
-        }
+        if (url) return { confirmationUrl: url };
       }
       console.error("[billing] subscription request failed:", error);
       return { error: "Could not start subscription. Please try again." };
@@ -201,9 +138,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       console.error("[billing] cancel failed (continuing to local downgrade):", e);
     }
 
-    await prisma.billingSubscription.update({
+    await prisma.billingSubscription.upsert({
       where: { shop },
-      data: { plan: "free", status: "active", shopifyChargeId: null },
+      create: { shop, plan: "free", status: "active" },
+      update: { plan: "free", status: "active", shopifyChargeId: null },
     });
     return { success: true, cancelled: true };
   }
@@ -234,7 +172,7 @@ async function extractConfirmationUrlAsync(response: Response): Promise<string |
 }
 
 export default function BillingPage() {
-  const { billing, usedThisMonth, limit, currentPlan, activated } = useLoaderData<typeof loader>();
+  const { usedThisMonth, limit, currentPlan, activated } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const toast = useToast();
 

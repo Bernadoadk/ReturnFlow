@@ -1,14 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { useLoaderData, useSubmit, useNavigation, useActionData } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { PageHeader, Btn, Icon, Toggle, Input, Textarea, Select, useToast } from "../components/ui";
 import { DEFAULT_REASONS, EMAIL_TEMPLATES } from "../components/mock-data";
-import { getShopPlan, planAtLeast } from "../lib/plan.server";
+import { getShopPlan, planAtLeast, syncBillingFromShopify } from "../lib/plan.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
   const appUrl = new URL(request.url).origin;
 
@@ -29,9 +29,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     });
   }
 
+  // Sync directly with Shopify to avoid races with the parent app.tsx loader.
   const [emailTemplates, plan] = await Promise.all([
     prisma.emailTemplate.findMany({ where: { shop } }),
-    getShopPlan(shop),
+    syncBillingFromShopify(admin, shop),
   ]);
 
   // Seed default templates if not present
@@ -560,181 +561,303 @@ function PortalAccessTab({ shop, appUrl }: { shop: string; appUrl: string }) {
 
   return (
     <div className="space-y-6">
-      {/* Theme block setup — required for App Store compliance (5.1.3) */}
-      <div className="bg-surface border border-border rounded-lg p-6">
-        <div className="flex items-start gap-3 mb-5">
-          <div className="w-9 h-9 rounded-md grid place-content-center shrink-0" style={{ background: 'rgba(34,197,94,0.15)', color: '#22C55E' }}>
-            <Icon name="Blocks" size={16} />
+      {/* ── Intro hero ──────────────────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-xl border border-divider bg-gradient-to-br from-accent/[0.04] via-bg/20 to-transparent p-6">
+        <div className="absolute -top-16 -right-16 w-56 h-56 rounded-full bg-accent/10 blur-3xl pointer-events-none" />
+        <div className="relative flex items-start gap-4">
+          <div className="w-10 h-10 rounded-lg grid place-content-center shrink-0 bg-accent/15 text-accent2">
+            <Icon name="Rocket" size={18} />
           </div>
-          <div>
-            <div className="text-[14px] font-semibold text-ink">Add return button to your theme</div>
-            <div className="text-[12.5px] text-muted mt-0.5 leading-relaxed max-w-lg">
-              Use the <strong className="text-ink">ReturnFlow — Return Button</strong> theme block to add a branded
-              "Start a Return" button directly on any page in your Online Store (e.g. footer, order status page).
+          <div className="flex-1">
+            <div className="text-[15px] font-semibold text-ink">Connect customers to your returns portal</div>
+            <p className="text-[12.5px] text-muted mt-1 leading-relaxed max-w-2xl">
+              Three ways to do it — pick one or combine them. The theme block is the fastest setup (under a minute);
+              direct URLs work anywhere; embeds put the portal inside any web page.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <QuickJump label="Theme block" color="#22C55E" />
+              <QuickJump label="Page URLs" color="#8B85FF" />
+              <QuickJump label="Embed" color="#3B82F6" />
             </div>
           </div>
         </div>
-
-        <ol className="space-y-2 mb-5 text-[12.5px] text-muted list-none">
-          {[
-            'Click "Open Theme Editor" below — the block will be pre-selected.',
-            'In the editor, choose a section where you want the button to appear (e.g. Footer group).',
-            'Click "Save" in the top-right corner of the theme editor.',
-          ].map((step, i) => (
-            <li key={i} className="flex items-start gap-2.5">
-              <span className="w-5 h-5 rounded-full text-[11px] font-bold grid place-content-center shrink-0 mt-0.5"
-                    style={{ background: 'rgba(34,197,94,0.15)', color: '#22C55E' }}>
-                {i + 1}
-              </span>
-              <span>{step}</span>
-            </li>
-          ))}
-        </ol>
-
-        <a href={themeEditorUrl} target="_blank" rel="noreferrer"
-           className="inline-flex items-center gap-2 h-9 px-4 rounded-md text-[13px] font-semibold border transition"
-           style={{ background: 'rgba(34,197,94,0.12)', color: '#22C55E', borderColor: 'rgba(34,197,94,0.25)' }}>
-          <Icon name="ExternalLink" size={14} />
-          Open Theme Editor
-        </a>
       </div>
 
-      {/* Page URLs section */}
-      <div className="bg-surface border border-border rounded-lg p-6">
-        <div className="flex items-start gap-3 mb-5">
-          <div className="w-9 h-9 rounded-md grid place-content-center shrink-0" style={{ background: 'rgba(108,99,255,0.15)', color: '#8B85FF' }}>
-            <Icon name="Link2" size={16} />
-          </div>
-          <div>
-            <div className="text-[14px] font-semibold text-ink">Page URLs</div>
-            <div className="text-[12.5px] text-muted mt-0.5 leading-relaxed max-w-lg">
-              Add a link to your returns page in your store footer, returns policy page, or order confirmation emails using these URLs.
-            </div>
-          </div>
-        </div>
+      {/* ── 1. Theme block ──────────────────────────────────────────────── */}
+      <SectionShell number={1} colorRgb="34,197,94" iconName="Blocks" title="Add a Return button to your theme"
+        subtitle="Drop the ReturnFlow theme block on any page — footer, FAQ, order status, anywhere — without touching code.">
+        <Stepper
+          color="#22C55E"
+          steps={[
+            { title: 'Click "Open Theme Editor"',       body: 'The Return Button block is pre-selected for you.' },
+            { title: 'Pick a section',                  body: 'Add it to your Footer group, or any section where it makes sense.' },
+            { title: 'Hit Save',                        body: 'Top-right corner of the theme editor. Live instantly.' },
+          ]}
+        />
 
-        <div className="space-y-3">
-          <UrlRow
-            label="Shopify store (via app proxy)"
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <a href={themeEditorUrl} target="_blank" rel="noreferrer"
+             className="group inline-flex items-center gap-2 h-10 px-5 rounded-md text-[13px] font-semibold text-white transition shadow-[0_1px_0_rgba(255,255,255,0.18)_inset,0_8px_22px_-6px_rgba(34,197,94,0.45)] hover:shadow-[0_1px_0_rgba(255,255,255,0.22)_inset,0_12px_30px_-8px_rgba(34,197,94,0.6)] hover:-translate-y-px"
+             style={{ background: 'linear-gradient(180deg, #2BCD66 0%, #22C55E 100%)' }}>
+            <Icon name="ExternalLink" size={14} className="transition-transform group-hover:translate-x-[1px]" />
+            Open Theme Editor
+          </a>
+          <span className="text-[11.5px] text-muted flex items-center gap-1.5">
+            <Icon name="Clock3" size={12} /> Takes under 60 seconds
+          </span>
+        </div>
+      </SectionShell>
+
+      {/* ── 2. Page URLs ────────────────────────────────────────────────── */}
+      <SectionShell number={2} colorRgb="108,99,255" iconName="Link2" title="Share a link"
+        subtitle="Paste these URLs in your footer, return policy page, order confirmation emails, social bios, QR codes — anywhere.">
+        <div className="grid gap-3">
+          <UrlCard
+            label="Shopify store URL"
             badge="Recommended"
-            description="Customers access the portal through your Shopify store URL — fully branded."
+            badgeTone="green"
+            tagline="Branded — customers stay on your domain."
             url={proxyUrl}
+            urlScheme="https://"
             copyKey="proxy"
             copied={copied}
             onCopy={copy}
           />
-          <UrlRow
+          <UrlCard
             label="Direct portal link"
             badge="Universal"
-            description="Works on any website, email, or QR code — hosted on our servers."
+            badgeTone="purple"
+            tagline="Works anywhere — email, QR code, ads, any platform."
             url={directUrl}
+            urlScheme="https://"
             copyKey="direct"
             copied={copied}
             onCopy={copy}
           />
         </div>
-      </div>
+      </SectionShell>
 
-      {/* Embedded returns page section */}
-      <div className="bg-surface border border-border rounded-lg p-6">
-        <div className="flex items-start gap-3 mb-5">
-          <div className="w-9 h-9 rounded-md grid place-content-center shrink-0" style={{ background: 'rgba(59,130,246,0.15)', color: '#3B82F6' }}>
-            <Icon name="Code2" size={16} />
-          </div>
-          <div>
-            <div className="text-[14px] font-semibold text-ink">Embedded returns page</div>
-            <div className="text-[12.5px] text-muted mt-0.5 leading-relaxed max-w-lg">
-              Embed the returns portal directly inside a page on your website for a seamless branded experience.
-            </div>
-          </div>
+      {/* ── 3. Embed ────────────────────────────────────────────────────── */}
+      <SectionShell number={3} colorRgb="59,130,246" iconName="Code2" title="Embed the portal in a page"
+        subtitle="Slip the whole returns portal inside any web page — Shopify, Webflow, WordPress, Squarespace, even plain HTML.">
+        <div className="space-y-3">
+          <CodeCard
+            tabLabel="Shopify page"
+            tabColor="#22C55E"
+            badge="App Proxy"
+            badgeTone="green"
+            description="Add this path as a link or button in a Shopify page. Shopify routes it through the app proxy automatically."
+            code={'/apps/returns'}
+            language="path"
+            copyKey="shopify-path"
+            copied={copied}
+            onCopy={copy}
+            theme="light"
+          />
+          <CodeCard
+            tabLabel="Any other website"
+            tabColor="#3B82F6"
+            badge="iFrame"
+            badgeTone="blue"
+            description="Paste this HTML where you want the portal to appear. Works on Webflow, WordPress, Squarespace, Notion, and anything that accepts embed code."
+            code={iframeCode}
+            language="html"
+            copyKey="iframe"
+            copied={copied}
+            onCopy={copy}
+            theme="dark"
+          />
         </div>
+      </SectionShell>
 
-        <div className="space-y-4">
-          {/* Shopify - app proxy */}
-          <div className="rounded-lg border border-divider bg-bg/30 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted">For Shopify</span>
-              <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded" style={{ background: 'rgba(34,197,94,0.15)', color: '#16a34a' }}>App Proxy</span>
-            </div>
-            <p className="text-[12.5px] text-muted mb-3 leading-relaxed">
-              Add this path as a link or button in a Shopify page. Shopify routes it through the app proxy automatically.
-            </p>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 flex items-center h-9 px-3 rounded-md bg-bg border border-border font-mono text-[12px] text-ink overflow-x-auto">
-                /apps/returns
-              </div>
-              <button
-                onClick={() => copy('shopify-path', '/apps/returns')}
-                className="h-9 px-3 rounded-md text-[12px] font-medium border border-border bg-surface hover:bg-bg transition flex items-center gap-1.5 shrink-0"
-              >
-                {copied === 'shopify-path' ? <><Icon name="Check" size={13} className="text-[#22c55e]" /> Copied</> : <><Icon name="Copy" size={13} /> Copy</>}
-              </button>
-            </div>
-          </div>
-
-          {/* Other platforms - iframe */}
-          <div className="rounded-lg border border-divider bg-bg/30 p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted">For other platforms</span>
-              <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded" style={{ background: 'rgba(108,99,255,0.15)', color: '#6C63FF' }}>iFrame</span>
-            </div>
-            <p className="text-[12.5px] text-muted mb-3 leading-relaxed">
-              Paste this code into any HTML page to embed the returns portal. Works on Webflow, WordPress, Squarespace, and more.
-            </p>
-            <div className="relative">
-              <pre className="w-full p-3 rounded-md bg-[#0f1117] text-[#e2e8f0] font-mono text-[11.5px] leading-relaxed overflow-x-auto">
-                {iframeCode}
-              </pre>
-              <button
-                onClick={() => copy('iframe', iframeCode)}
-                className="absolute top-2 right-2 h-7 px-2.5 rounded text-[11px] font-medium bg-white/10 hover:bg-white/20 text-white transition flex items-center gap-1.5"
-              >
-                {copied === 'iframe' ? <><Icon name="Check" size={12} /> Copied</> : <><Icon name="Copy" size={12} /> Copy</>}
-              </button>
-            </div>
-          </div>
+      {/* ── Pro tip ─────────────────────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-xl border-l-2 border-accent border-y border-y-divider border-r border-r-divider bg-bg/30 p-4 pl-5 flex items-start gap-3">
+        <div className="w-8 h-8 rounded-md grid place-content-center shrink-0 bg-accent/15 text-accent2">
+          <Icon name="Lightbulb" size={15} />
         </div>
-      </div>
-
-      {/* How to add tip */}
-      <div className="rounded-lg border border-divider bg-bg/30 p-4 flex items-start gap-3">
-        <Icon name="Lightbulb" size={15} className="text-accent mt-0.5 shrink-0" />
         <div className="text-[12.5px] text-muted leading-relaxed">
-          <span className="font-semibold text-ink">Tip: </span>
-          The easiest way is to add a "Start a Return" button in your Shopify store's footer or on your order confirmation page pointing to <span className="font-mono text-ink">/apps/returns</span>.
-          Customers can then look up their order and submit a return request without logging in.
+          <div className="font-semibold text-ink text-[13px] mb-0.5">Pro tip — start with the footer</div>
+          The fastest, most visible spot is your footer: every page links to it. Use the <span className="font-mono text-ink bg-bg/60 px-1 py-0.5 rounded">/apps/returns</span> path
+          (theme block or a plain link button) and you're done in 60 seconds. Customers can look up their order and submit a return request without an account.
         </div>
       </div>
     </div>
   );
 }
 
-function UrlRow({ label, badge, description, url, copyKey, copied, onCopy }: {
-  label: string; badge: string; description: string; url: string;
-  copyKey: string; copied: string | null; onCopy: (key: string, text: string) => void;
+// ── Sub-components ──────────────────────────────────────────────────────
+
+function QuickJump({ label, color }: { label: string; color: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium"
+          style={{ background: `${color}1f`, color }}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+      {label}
+    </span>
+  );
+}
+
+function SectionShell({ number, colorRgb, iconName, title, subtitle, children }: {
+  number: number; colorRgb: string; iconName: string; title: string; subtitle: string; children: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 p-4 rounded-lg border border-divider bg-bg/20 flex-wrap">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-[13px] font-semibold text-ink">{label}</span>
-          <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded" style={{ background: 'rgba(108,99,255,0.12)', color: '#6C63FF' }}>{badge}</span>
+    <div className="bg-surface border border-border rounded-xl overflow-hidden">
+      {/* colored top bar */}
+      <div className="h-1" style={{ background: `rgb(${colorRgb})` }} />
+      <div className="p-6">
+        <div className="flex items-start gap-4 mb-5">
+          <div className="relative shrink-0">
+            <div className="w-11 h-11 rounded-lg grid place-content-center"
+                 style={{ background: `rgba(${colorRgb},0.12)`, color: `rgb(${colorRgb})` }}>
+              <Icon name={iconName} size={18} />
+            </div>
+            <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full grid place-content-center text-[10.5px] font-bold text-white shadow-md"
+                 style={{ background: `rgb(${colorRgb})` }}>
+              {number}
+            </div>
+          </div>
+          <div className="flex-1 pt-0.5">
+            <div className="text-[15px] font-semibold text-ink">{title}</div>
+            <div className="text-[12.5px] text-muted mt-1 leading-relaxed max-w-2xl">{subtitle}</div>
+          </div>
         </div>
-        <div className="text-[11.5px] text-muted">{description}</div>
-        <div className="mt-1.5 font-mono text-[12px] text-ink truncate">{url}</div>
+        {children}
       </div>
-      <button
-        onClick={() => onCopy(copyKey, url)}
-        className="h-8 px-3 rounded-md text-[12px] font-medium border border-border bg-surface hover:bg-bg transition flex items-center gap-1.5 shrink-0"
-      >
-        {copied === copyKey
-          ? <><Icon name="Check" size={13} className="text-[#22c55e]" /> Copied</>
-          : <><Icon name="Copy" size={13} /> Copy URL</>}
-      </button>
-      <a href={url} target="_blank" rel="noreferrer"
-         className="h-8 px-3 rounded-md text-[12px] font-medium border border-border bg-surface hover:bg-bg transition flex items-center gap-1.5 shrink-0">
-        <Icon name="ExternalLink" size={13} /> Open
-      </a>
+    </div>
+  );
+}
+
+function Stepper({ steps, color }: { color: string; steps: { title: string; body: string }[] }) {
+  return (
+    <ol className="relative space-y-3">
+      {steps.map((s, i) => (
+        <li key={i} className="flex gap-3">
+          <div className="relative flex flex-col items-center">
+            <span className="w-6 h-6 rounded-full grid place-content-center text-[11px] font-bold shrink-0"
+                  style={{ background: `${color}26`, color }}>
+              {i + 1}
+            </span>
+            {i < steps.length - 1 && (
+              <span className="flex-1 w-px mt-1" style={{ background: `${color}33` }} />
+            )}
+          </div>
+          <div className="flex-1 pb-1">
+            <div className="text-[13px] font-medium text-ink leading-snug">{s.title}</div>
+            <div className="text-[12px] text-muted leading-relaxed mt-0.5">{s.body}</div>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+const BADGE_TONES: Record<string, { bg: string; fg: string }> = {
+  green:  { bg: 'rgba(34,197,94,0.15)',  fg: '#16A34A' },
+  purple: { bg: 'rgba(108,99,255,0.15)', fg: '#7c70ff' },
+  blue:   { bg: 'rgba(59,130,246,0.15)', fg: '#3B82F6' },
+};
+
+function UrlCard({ label, badge, badgeTone, tagline, url, urlScheme, copyKey, copied, onCopy }: {
+  label: string; badge: string; badgeTone: keyof typeof BADGE_TONES; tagline: string;
+  url: string; urlScheme: string;
+  copyKey: string; copied: string | null; onCopy: (key: string, text: string) => void;
+}) {
+  const tone = BADGE_TONES[badgeTone];
+  const urlWithoutScheme = url.startsWith(urlScheme) ? url.slice(urlScheme.length) : url;
+  const isCopied = copied === copyKey;
+  return (
+    <div className="group rounded-lg border border-divider bg-bg/20 hover:bg-bg/40 hover:border-border transition p-4">
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[12.5px] font-semibold text-ink">{label}</span>
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded"
+              style={{ background: tone.bg, color: tone.fg }}>
+          {badgeTone === 'green' && <Icon name="Check" size={9} strokeWidth={3} />}
+          {badge}
+        </span>
+      </div>
+      <div className="text-[11.5px] text-muted leading-relaxed mb-2.5">{tagline}</div>
+
+      <div className="flex items-stretch gap-2 flex-wrap">
+        <div className="flex-1 min-w-0 flex items-center h-9 px-3 rounded-md bg-bg border border-border font-mono text-[12px] overflow-hidden">
+          <span className="text-faint shrink-0">{urlScheme}</span>
+          <span className="text-ink truncate">{urlWithoutScheme}</span>
+        </div>
+        <button
+          onClick={() => onCopy(copyKey, url)}
+          className={`h-9 px-3 rounded-md text-[12px] font-medium border transition flex items-center gap-1.5 shrink-0 ${
+            isCopied
+              ? 'border-[#22C55E]/30 bg-[#22C55E]/10 text-[#22C55E]'
+              : 'border-border bg-surface hover:bg-bg hover:border-[#3a3e58] text-ink'
+          }`}>
+          {isCopied
+            ? <><Icon name="Check" size={13} strokeWidth={2.5} /> Copied</>
+            : <><Icon name="Copy" size={13} /> Copy URL</>}
+        </button>
+        <a href={url} target="_blank" rel="noreferrer"
+           className="h-9 px-3 rounded-md text-[12px] font-medium border border-border bg-surface hover:bg-bg hover:border-[#3a3e58] text-ink transition flex items-center gap-1.5 shrink-0">
+          <Icon name="ExternalLink" size={13} /> Open
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function CodeCard({ tabLabel, tabColor, badge, badgeTone, description, code, language, copyKey, copied, onCopy, theme }: {
+  tabLabel: string; tabColor: string;
+  badge: string; badgeTone: keyof typeof BADGE_TONES;
+  description: string;
+  code: string;
+  language: 'path' | 'html';
+  copyKey: string; copied: string | null; onCopy: (key: string, text: string) => void;
+  theme: 'dark' | 'light';
+}) {
+  const tone = BADGE_TONES[badgeTone];
+  const isCopied = copied === copyKey;
+  const isDark = theme === 'dark';
+
+  return (
+    <div className="rounded-lg border border-divider bg-bg/20 overflow-hidden">
+      {/* Tab header */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider bg-bg/40">
+        <div className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: tabColor }} />
+          <span className="text-[12px] font-semibold text-ink">{tabLabel}</span>
+          <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide rounded"
+                style={{ background: tone.bg, color: tone.fg }}>
+            {badge}
+          </span>
+        </div>
+        <span className="text-[10.5px] font-mono uppercase tracking-wider text-faint">{language}</span>
+      </div>
+
+      {/* Description */}
+      <p className="px-4 pt-3 pb-2 text-[12px] text-muted leading-relaxed">{description}</p>
+
+      {/* Code + copy */}
+      <div className="px-4 pb-4">
+        <div className="relative">
+          <pre className={`w-full p-3 pr-16 rounded-md font-mono text-[11.5px] leading-relaxed overflow-x-auto ${
+            isDark ? 'bg-[#0f1117] text-[#e2e8f0]' : 'bg-bg border border-border text-ink'
+          }`}>
+            {code}
+          </pre>
+          <button
+            onClick={() => onCopy(copyKey, code)}
+            className={`absolute top-2 right-2 h-7 px-2.5 rounded text-[11px] font-medium transition flex items-center gap-1.5 ${
+              isDark
+                ? (isCopied
+                    ? 'bg-[#22C55E]/20 text-[#22C55E]'
+                    : 'bg-white/10 hover:bg-white/20 text-white')
+                : (isCopied
+                    ? 'bg-[#22C55E]/15 text-[#22C55E]'
+                    : 'border border-border bg-surface hover:bg-bg text-ink')
+            }`}>
+            {isCopied
+              ? <><Icon name="Check" size={12} strokeWidth={2.5} /> Copied</>
+              : <><Icon name="Copy" size={12} /> Copy</>}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

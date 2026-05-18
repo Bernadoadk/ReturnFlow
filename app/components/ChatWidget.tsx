@@ -22,6 +22,8 @@ type Props = {
   pollUrl?: string;
   // Position
   position?: "bottom-right" | "bottom-left";
+  // Lucide icon name for the floating button (e.g. "MessageCircle", "MessageSquare", "Mail", ...)
+  icon?: string;
 };
 
 const STORAGE_KEY = "rf_chat_identity";
@@ -58,6 +60,7 @@ export default function ChatWidget({
   sendUrl = "/portal-api/chat/send",
   pollUrl = "/portal-api/chat/poll",
   position = "bottom-right",
+  icon = "MessageCircle",
 }: Props) {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
@@ -433,7 +436,7 @@ export default function ChatWidget({
         aria-label={open ? "Close chat" : "Open chat"}
       >
         <div className="transition-transform duration-300" style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>
-          {open ? <Icon name="X" size={22} /> : <Icon name="MessageCircle" size={22} strokeWidth={2.25} />}
+          {open ? <Icon name="X" size={22} /> : <Icon name={icon} size={22} strokeWidth={2.25} />}
         </div>
         {!open && unread > 0 && (
           <span className="absolute -top-1 -right-1 min-w-[22px] h-[22px] px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold grid place-content-center ring-2 ring-white animate-pulse">

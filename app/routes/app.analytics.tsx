@@ -4,7 +4,7 @@ import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { PageHeader, Card } from "../components/ui";
-import { getShopPlan } from "../lib/plan.server";
+import { syncBillingFromShopify } from "../lib/plan.server";
 
 const ANALYTICS_COLORS = ['#6C63FF','#EF4444','#F59E0B','#3B82F6','#8B5CF6'];
 
@@ -56,12 +56,13 @@ function computePeriod(requests: any[], days: number) {
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
 
+  // Sync directly with Shopify to avoid races with the parent app.tsx loader.
   const [returnRequests, plan] = await Promise.all([
     prisma.returnRequest.findMany({ where: { shop }, include: { items: true }, orderBy: { createdAt: 'desc' } }),
-    getShopPlan(shop),
+    syncBillingFromShopify(admin, shop),
   ]);
 
   const isStarter = plan === 'starter' || plan === 'pro';

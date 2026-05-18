@@ -85,6 +85,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       labelPoweredBy: "Secured by ReturnFlow",
       labelTrackingToggle: "Already shipped your return? Submit tracking",
       liveChatEnabled: true,
+      liveChatIcon: "MessageCircle",
     } as any;
   }
 
@@ -588,6 +589,7 @@ export default function PortalPage() {
             storeName={settings?.portalStoreName || shop.split('.')[0]}
             prefillEmail={chatPrefillEmail || undefined}
             prefillName={chatPrefillName || undefined}
+            icon={(settings as any)?.liveChatIcon || 'MessageCircle'}
           />
         )}
       </>
@@ -702,6 +704,7 @@ export default function PortalPage() {
         storeName={settings?.portalStoreName || shop.split('.')[0]}
         prefillEmail={chatPrefillEmail || undefined}
         prefillName={chatPrefillName || undefined}
+        icon={(settings as any)?.liveChatIcon || 'MessageCircle'}
       />
     )}
     </>

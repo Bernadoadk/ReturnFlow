@@ -5,6 +5,7 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { syncBillingFromShopify } from "../lib/plan.server";
 import { Sidebar, ToastProvider, Icon } from "../components/ui";
 import { useEffect, useState } from "react";
 import SupportChatWidget from "../components/SupportChatWidget";
@@ -23,12 +24,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
 
-  const [pendingCount, shopData, billing, unreadAgg] = await Promise.all([
+  // Sync with Shopify FIRST — this is the source of truth for the plan.
+  // Doing it here (in the top-level admin layout loader) means every admin
+  // navigation refreshes the cache, so the UI never gets stuck on a stale
+  // "pending" or wrongly-active state.
+  const planName = await syncBillingFromShopify(admin, shop);
+
+  const [pendingCount, shopData, unreadAgg] = await Promise.all([
     prisma.returnRequest.count({ where: { shop, status: 'PENDING' } }),
     admin.graphql(`#graphql
       query { shop { name } }
     `).then(r => r.json()).catch(() => ({ data: { shop: { name: null } } })),
-    prisma.billingSubscription.findUnique({ where: { shop } }),
     prisma.conversation.aggregate({
       where: { shop, type: 'CLIENT' },
       _sum: { unreadByMerchant: true },
@@ -46,7 +52,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 
   const PLAN_LIMITS: Record<string, number> = { free: 10, starter: 100, pro: 999999 };
-  const planName: string = (billing?.status === 'active' ? billing?.plan : null) ?? 'free';
   const planLimit: number = PLAN_LIMITS[planName] ?? 10;
 
   return { apiKey: process.env.SHOPIFY_API_KEY || "", pendingCount, unreadCount, shop, shopName, planName, usedThisMonth, planLimit };

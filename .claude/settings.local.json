@@ -15,7 +15,9 @@
       "WebFetch(domain:www.aftership.com)",
       "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Bernado ADIKPETO\\\\Desktop\\\\my_project\\\\return-flow-dev\" -Force | Select-Object Name, @{Name=\"Type\"; Expression={if \\($_.PSIsContainer\\) { \"DIR\" } else { \"FILE\" }}} | Format-Table -AutoSize)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Bernado ADIKPETO\\\\Desktop\\\\my_project\\\\return-flow-dev\" -Directory)",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "Bash(Get-Item -Path .)",
+      "Bash(Select-Object FullName)"
     ]
   }
 }

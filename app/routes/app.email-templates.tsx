@@ -3,7 +3,7 @@ import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { useLoaderData, useSubmit, useNavigation, useActionData } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getShopPlan, planAtLeast } from "../lib/plan.server";
+import { getShopPlan, planAtLeast, syncBillingFromShopify } from "../lib/plan.server";
 import {
   PageHeader, Icon, ColorPicker, CloudinaryLogoUploader, useToast
 } from "../components/ui";
@@ -59,7 +59,7 @@ const SAMPLE: Record<string, string> = {
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
 
   let settings = await prisma.shopSettings.findUnique({ where: { shop } });
@@ -74,9 +74,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   }
 
+  // Sync directly with Shopify to avoid races with the parent app.tsx loader
+  // on direct/refresh loads of this page.
   const [templates, plan] = await Promise.all([
     prisma.emailTemplate.findMany({ where: { shop } }),
-    getShopPlan(shop),
+    syncBillingFromShopify(admin, shop),
   ]);
 
   return {

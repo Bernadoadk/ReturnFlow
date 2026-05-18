@@ -4,8 +4,21 @@ import { useLoaderData, useSubmit, useNavigation, useActionData } from "react-ro
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { uploadToCloudinary, deleteFromCloudinary, isCloudinaryUrl } from "../lib/cloudinary.server";
-import { getShopPlan, planAtLeast } from "../lib/plan.server";
+import { getShopPlan, planAtLeast, syncBillingFromShopify } from "../lib/plan.server";
 import { Icon, useToast, ColorPicker, CloudinaryLogoUploader, Toggle } from "../components/ui";
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+// Lucide icon names available for the chat bubble. Picked for visual variety
+// (round, square, with dots, mail, headphones, lifebuoy).
+const CHAT_ICON_CHOICES = [
+  "MessageCircle",
+  "MessageSquare",
+  "MessageCircleMore",
+  "Mail",
+  "Headphones",
+  "LifeBuoy",
+] as const;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -34,17 +47,20 @@ type EditorSettings = {
   labelPoweredBy:      string;
   labelTrackingToggle: string;
   liveChatEnabled:     boolean;
+  liveChatIcon:        string;
 };
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
 
+  // Sync directly here (instead of just reading via getShopPlan) so we don't
+  // race with the parent app.tsx loader on direct/refresh loads of this page.
   const [s, plan] = await Promise.all([
     prisma.shopSettings.findUnique({ where: { shop } }).then(r => r ?? prisma.shopSettings.create({ data: { shop } })),
-    getShopPlan(shop),
+    syncBillingFromShopify(admin, shop),
   ]);
 
   return {
@@ -75,6 +91,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       labelPoweredBy:      s.labelPoweredBy,
       labelTrackingToggle: s.labelTrackingToggle,
       liveChatEnabled:     (s as any).liveChatEnabled ?? true,
+      liveChatIcon:        (s as any).liveChatIcon ?? "MessageCircle",
     } satisfies EditorSettings,
   };
 };
@@ -138,6 +155,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       labelPoweredBy:      fd.get("labelPoweredBy")      as string,
       labelTrackingToggle: fd.get("labelTrackingToggle") as string,
       liveChatEnabled:     fd.get("liveChatEnabled") === "true",
+      liveChatIcon:        (fd.get("liveChatIcon") as string) || "MessageCircle",
     } as any,
   });
 
@@ -343,6 +361,35 @@ export default function PortalEditorPage() {
                 <div className="absolute inset-0 cursor-not-allowed" title="Pro plan required" />
               )}
             </div>
+
+            {/* Icon picker — only meaningful when chat is enabled */}
+            {isPro && s.liveChatEnabled && (
+              <div className="mt-4">
+                <div className="text-[12px] font-semibold text-ink mb-0.5">Bubble icon</div>
+                <div className="text-[11px] text-muted mb-2">Shown on the floating chat button</div>
+                <div className="grid grid-cols-6 gap-1.5">
+                  {CHAT_ICON_CHOICES.map(name => {
+                    const selected = s.liveChatIcon === name;
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => set("liveChatIcon", name)}
+                        title={name}
+                        className={`h-10 grid place-content-center rounded-md border-2 transition ${
+                          selected
+                            ? "border-accent bg-accent/10 text-accent2"
+                            : "border-transparent bg-bg/40 hover:bg-bg/80 text-ink"
+                        }`}
+                      >
+                        <Icon name={name} size={16} strokeWidth={2.25} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {!isPro && (
               <div className="mt-3 flex items-center justify-between gap-3 p-3 rounded-md border border-divider bg-bg/40">
                 <div className="flex items-center gap-2 text-[12.5px] text-muted">
@@ -452,7 +499,7 @@ export default function PortalEditorPage() {
                 </div>
               )}
 
-              <PortalPreview settings={s} step={previewStep} shop={shop} device={device} />
+              <PortalPreview settings={s} step={previewStep} shop={shop} device={device} chatEnabled={isPro && s.liveChatEnabled} />
             </div>
           </div>
         </div>
@@ -760,10 +807,11 @@ function LabelField({ label, hint, value, placeholder, onChange }: {
 
 // ─── Portal preview (dispatcher) ─────────────────────────────────────────────
 
-function PortalPreview({ settings: s, step, shop, device }: {
-  settings: EditorSettings; step: number; shop: string; device: "desktop" | "mobile";
+function PortalPreview({ settings: s, step, shop, device, chatEnabled }: {
+  settings: EditorSettings; step: number; shop: string; device: "desktop" | "mobile"; chatEnabled: boolean;
 }) {
   const wrapStyle: React.CSSProperties = {
+    position: "relative", // anchor for the chat bubble overlay
     borderLeft:   "1px solid #e6e6ec",
     borderRight:  "1px solid #e6e6ec",
     borderBottom: "1px solid #e6e6ec",
@@ -786,6 +834,35 @@ function PortalPreview({ settings: s, step, shop, device }: {
   return (
     <div style={wrapStyle}>
       <Layout s={s} step={step} shop={shop} />
+      {chatEnabled && (
+        <PreviewChatBubble brandColor={s.brandColor} iconName={s.liveChatIcon} />
+      )}
+    </div>
+  );
+}
+
+// Static visual stand-in for the live ChatWidget — appears in the preview
+// canvas so merchants can see exactly what their customers will get.
+function PreviewChatBubble({ brandColor, iconName }: { brandColor: string; iconName: string }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        right: 14,
+        bottom: 14,
+        width: 44,
+        height: 44,
+        borderRadius: "50%",
+        background: brandColor,
+        display: "grid",
+        placeContent: "center",
+        color: "#fff",
+        boxShadow: `0 10px 24px -6px ${brandColor}80, 0 0 0 1px rgba(255,255,255,0.08) inset`,
+        pointerEvents: "none", // the preview is non-interactive
+        zIndex: 5,
+      }}
+    >
+      <Icon name={iconName} size={18} strokeWidth={2.25} />
     </div>
   );
 }

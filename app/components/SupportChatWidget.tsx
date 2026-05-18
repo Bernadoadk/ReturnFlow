@@ -152,6 +152,11 @@ export default function SupportChatWidget() {
         flexDirection: "column",
         alignItems: "flex-end",
         fontFamily: "inherit",
+        // The outer container is sized to fit the (always-laid-out) panel, so
+        // without this it would intercept clicks across a ~380×600 area in the
+        // bottom-right of the viewport — covering legitimate buttons like the
+        // "Upgrade to Pro" CTA. Only the visible children should be clickable.
+        pointerEvents: "none",
       }}
     >
       {/* Panel */}
@@ -294,7 +299,7 @@ export default function SupportChatWidget() {
       {/* Floating button */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="relative w-14 h-14 rounded-full grid place-content-center text-white transition-transform hover:scale-105 active:scale-95"
+        className="pointer-events-auto relative w-14 h-14 rounded-full grid place-content-center text-white transition-transform hover:scale-105 active:scale-95"
         style={{
           background: "linear-gradient(135deg,#6C63FF,#4F46E5)",
           boxShadow:
