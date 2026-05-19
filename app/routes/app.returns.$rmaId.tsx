@@ -221,6 +221,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
               orderId: rr.orderId,
               refundLineItems,
               transactions: [{
+                orderId: rr.orderId,
                 parentId: saleTx.id,
                 amount: refundAmount.toFixed(2),
                 kind: "REFUND",
