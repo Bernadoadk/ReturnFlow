@@ -7,7 +7,7 @@ import { getShopPlan } from "../lib/plan.server";
 import { Icon } from "../components/ui";
 import { REFUND_TYPES } from "../components/mock-data";
 import { sendReturnEmail } from "../lib/mailer.server";
-import { getTrackingUrl } from "../lib/carriers";
+import { getTrackingUrl, CARRIER_OPTIONS, OTHER_CARRIER } from "../lib/carriers";
 import ChatWidget from "../components/ChatWidget";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -1109,6 +1109,65 @@ function PortalInput({ label, value, onChange, placeholder, type = 'text' }: any
   );
 }
 
+/**
+ * Portal-styled carrier picker: native <select> for accessibility and zero
+ * friction on mobile, with an "Other" option that swaps to a free-text input
+ * for carriers we don't natively support (no tracking deep-link will be
+ * generated in that case — see lib/carriers.ts).
+ */
+function PortalCarrierField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const presetValues = CARRIER_OPTIONS.map(o => o.value).filter(v => v !== OTHER_CARRIER);
+  const isPreset = !!value && presetValues.includes(value);
+  const startsOther = !!value && !isPreset;
+  const [otherMode, setOtherMode] = useState(startsOther);
+  const dropdownValue = otherMode ? OTHER_CARRIER : (isPreset ? value : '');
+
+  const fieldClass =
+    "w-full h-11 px-3.5 rounded-xl border border-[#e2e5ec] bg-white text-[14px] text-[#111] " +
+    "placeholder:text-[#b8bcc7] hover:border-[#c8cdd6] " +
+    "focus:outline-none focus:border-[color:var(--brand)] " +
+    "focus:ring-4 focus:ring-[color-mix(in_srgb,var(--brand)_18%,transparent)] " +
+    "transition-[border-color,box-shadow,background-color] duration-200";
+
+  return (
+    <div className="group">
+      <label className="block text-[12.5px] font-medium text-[#444] mb-1.5 transition-colors group-focus-within:text-[color:var(--brand)]">Carrier</label>
+      <div className="relative">
+        <select
+          value={dropdownValue}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === OTHER_CARRIER) {
+              setOtherMode(true);
+              onChange('');
+            } else {
+              setOtherMode(false);
+              onChange(v);
+            }
+          }}
+          className={`${fieldClass} appearance-none pr-9 cursor-pointer ${dropdownValue === '' ? 'text-[#b8bcc7]' : 'text-[#111]'}`}>
+          <option value="">Select a carrier…</option>
+          {CARRIER_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#888]">
+          <Icon name="ChevronDown" size={14} />
+        </div>
+      </div>
+      {otherMode && (
+        <input
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder="Enter carrier name"
+          className={`${fieldClass} mt-2`}
+        />
+      )}
+    </div>
+  );
+}
+
 function PortalBtn({ variant = 'primary', children, full, onClick, disabled, icon, iconRight }: any) {
   const base = 'group inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl text-[13.5px] font-semibold ' +
                'transition-[transform,box-shadow,background-color,color] duration-200 ease-out ' +
@@ -1221,7 +1280,7 @@ function StepFindOrder({ orderNum, setOrderNum, email, setEmail, onNext, canCont
             )}
             <PortalInput label="Your RMA number" value={tRma} onChange={setTRma} placeholder="RMA-2026-000001" />
             <PortalInput label="Email used at checkout" value={tEmail} onChange={setTEmail} placeholder="your@email.com" type="email" />
-            <PortalInput label="Carrier" value={tCarrier} onChange={setTCarrier} placeholder="UPS, FedEx, USPS…" />
+            <PortalCarrierField value={tCarrier} onChange={setTCarrier} />
             <PortalInput label="Tracking number" value={tTracking} onChange={setTTracking} placeholder="1Z999AA1…" />
             <div className="pt-1">
               <PortalBtn onClick={handleTrackingSubmit}

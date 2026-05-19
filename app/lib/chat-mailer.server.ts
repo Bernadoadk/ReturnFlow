@@ -1,6 +1,12 @@
 import nodemailer from "nodemailer";
 import prisma from "../db.server";
 
+// Seed placeholder used during onboarding — must NOT be used as a real
+// destination, the domain has no MX records and Gmail bounces every delivery.
+const PLACEHOLDER_FROM_EMAIL = "returns@acmestore.com";
+const isRealEmail = (v?: string | null) =>
+  !!v && v !== PLACEHOLDER_FROM_EMAIL && /.+@.+\..+/.test(v);
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || "smtp.gmail.com",
   port: parseInt(process.env.SMTP_PORT || "587"),
@@ -21,8 +27,13 @@ export async function sendChatEmail(params: {
   const settings = await prisma.shopSettings.findUnique({
     where: { shop: params.shop },
   });
-  const merchantEmail = settings?.fromEmail || process.env.SMTP_USER;
-  if (!merchantEmail) return false;
+  const merchantEmail = isRealEmail(settings?.fromEmail)
+    ? settings!.fromEmail!
+    : process.env.SMTP_USER;
+  if (!merchantEmail) {
+    console.warn("[chat] no merchant email configured (fromEmail is placeholder and SMTP_USER missing); skipping notification");
+    return false;
+  }
 
   const adminUrl = (process.env.SHOPIFY_APP_URL?.replace(/\/$/, "") ?? "") +
     "/app/messages";

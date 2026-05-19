@@ -128,8 +128,9 @@ export function resolveCarrier(name: string | null | undefined): Carrier | null 
 
 /**
  * Generate a tracking URL for the given carrier + tracking number.
- * Falls back to Google search if the carrier isn't recognized — still
- * gives the customer a useful one-click action.
+ * Returns null when the carrier isn't one of our supported ones — the UI
+ * then hides the "Track live" link instead of showing a generic Google
+ * search (which feels unprofessional).
  */
 export function getTrackingUrl(
   carrier: string | null | undefined,
@@ -138,9 +139,19 @@ export function getTrackingUrl(
   if (!trackingNumber) return null;
   const c = resolveCarrier(carrier);
   if (c) return c.trackingUrl(trackingNumber);
-  // Graceful fallback
-  return `https://www.google.com/search?q=${enc(`${carrier || ''} tracking ${trackingNumber}`)}`;
+  return null;
 }
+
+/** Sentinel value used by the dropdowns when a merchant/customer picks a
+ *  carrier we don't natively support. Stored as-is in the DB and treated as
+ *  an unknown carrier by getTrackingUrl (→ no Track live link). */
+export const OTHER_CARRIER = "Other";
+
+/** Dropdown options ready-to-use in both merchant and customer UIs. */
+export const CARRIER_OPTIONS = [
+  ...CARRIERS.map(c => ({ value: c.name, label: c.name })),
+  { value: OTHER_CARRIER, label: "Other / Not listed" },
+];
 
 export function getCarrierDisplayName(carrier: string | null | undefined): string {
   const c = resolveCarrier(carrier);

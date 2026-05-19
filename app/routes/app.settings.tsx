@@ -4,7 +4,7 @@ import { useLoaderData, useSubmit, useNavigation, useActionData, Link, useLocati
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { PageHeader, Btn, Icon, Toggle, Input, Textarea, Select, useToast } from "../components/ui";
-import { DEFAULT_REASONS, EMAIL_TEMPLATES } from "../components/mock-data";
+import { DEFAULT_REASONS } from "../components/mock-data";
 import { getShopPlan, planAtLeast, syncBillingFromShopify } from "../lib/plan.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -30,23 +30,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   // Sync directly with Shopify to avoid races with the parent app.tsx loader.
-  const [emailTemplates, plan] = await Promise.all([
-    prisma.emailTemplate.findMany({ where: { shop } }),
-    syncBillingFromShopify(admin, shop),
-  ]);
+  // Email templates are managed on the dedicated /app/email-templates page,
+  // which also handles its own seeding — no need to load them here.
+  const plan = await syncBillingFromShopify(admin, shop);
 
-  // Seed default templates if not present
-  const TEMPLATE_TYPES = ['Request Received', 'Approved', 'Rejected', 'Refunded'];
-  for (const type of TEMPLATE_TYPES) {
-    const exists = emailTemplates.find(t => t.type === type);
-    if (!exists) {
-      const def = EMAIL_TEMPLATES[type as keyof typeof EMAIL_TEMPLATES];
-      await prisma.emailTemplate.create({ data: { shop, type, subject: def.subject, body: def.body } });
-    }
-  }
-  const templates = await prisma.emailTemplate.findMany({ where: { shop } });
-
-  return { settings, templates, shop, appUrl, plan };
+  return { settings, shop, appUrl, plan };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -91,27 +79,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       where: { shop },
       data: { returnPolicy: formData.get("returnPolicy") as string }
     });
-  } else if (intent === "save_email_template") {
-    const type = formData.get("templateType") as string;
-    const subject = formData.get("subject") as string;
-    const body = formData.get("body") as string;
-    await prisma.emailTemplate.upsert({
-      where: { shop_type: { shop, type } },
-      create: { shop, type, subject, body },
-      update: { subject, body }
-    });
   }
 
   return { success: true };
 };
 
 export default function SettingsPage() {
-  const { settings, templates, shop, appUrl, plan } = useLoaderData<typeof loader>();
+  const { settings, shop, appUrl, plan } = useLoaderData<typeof loader>();
 
   const tabs = [
     { key: 'General', icon: 'Settings2' },
     { key: 'Reasons', icon: 'Tag' },
-    { key: 'Emails',  icon: 'Mail' },
     { key: 'Policy',  icon: 'FileText' },
     { key: 'Portal',  icon: 'Globe' },
   ];
@@ -149,7 +127,6 @@ export default function SettingsPage() {
 
       {tab === 'General' && <GeneralTab settings={settings} />}
       {tab === 'Reasons' && <ReasonsTab settings={settings} plan={plan} />}
-      {tab === 'Emails'  && <EmailsTab templates={templates} />}
       {tab === 'Policy'  && <PolicyTab settings={settings} />}
       {tab === 'Portal'  && <PortalAccessTab shop={shop} appUrl={appUrl} />}
     </div>
@@ -439,105 +416,6 @@ function ReasonsTab({ settings, plan }: any) {
       </div>
 
       <div className="pt-6 border-t border-divider mt-6"><SaveBar onSave={handleSave} onDiscard={() => setReasons(settings.reasons.map((r: any, idx: number) => ({ id: idx, label: r.label, enabled: r.enabled })))} isSaving={isSaving} disabled={!isPro} /></div>
-    </div>
-  );
-}
-
-// ---- Emails tab ----
-function EmailsTab({ templates }: any) {
-  const submit = useSubmit();
-  const navigation = useNavigation();
-  const toast = useToast();
-  const actionData = useActionData<typeof action>();
-
-  const [templateType, setTemplateType] = useState('Request Received');
-  
-  const currentTemplate = templates.find((t: any) => t.type === templateType) || 
-    templates[0] || { subject: '', body: '' };
-  
-  const [subject, setSubject] = useState(currentTemplate.subject);
-  const [body, setBody] = useState(currentTemplate.body);
-  
-  const isSaving = navigation.state === "submitting" && 
-    (navigation.formData as FormData | undefined)?.get("intent") === "save_email_template";
-
-  useEffect(() => {
-    const t = templates.find((t: any) => t.type === templateType);
-    if (t) { setSubject(t.subject); setBody(t.body); }
-  }, [templateType, templates]);
-
-  useEffect(() => {
-    if (actionData?.success && navigation.state === "idle" && 
-        (navigation.formData as FormData | undefined)?.get("intent") === "save_email_template") {
-      toast({ kind: 'success', title: 'Email template saved' });
-    }
-  }, [actionData, navigation.state, navigation.formData, toast]);
-
-  const handleSave = () => {
-    const fd = new FormData();
-    fd.append("intent", "save_email_template");
-    fd.append("templateType", templateType);
-    fd.append("subject", subject);
-    fd.append("body", body);
-    submit(fd, { method: "POST" });
-  };
-
-  const fill = (s: string) => s
-    .replace(/\{\{customer_name\}\}/g,  'Sarah')
-    .replace(/\{\{rma_number\}\}/g,     'RMA-2026-000012')
-    .replace(/\{\{order_number\}\}/g,   '#1089')
-    .replace(/\{\{item_count\}\}/g,     '2')
-    .replace(/\{\{refund_amount\}\}/g,  '$83.00')
-    .replace(/\{\{rejection_reason\}\}/g, 'Outside 30-day return window');
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <div className="lg:col-span-3 bg-surface border border-border rounded-lg p-6">
-        <label className="text-[12px] font-medium text-muted block mb-1.5">Template</label>
-        <Select value={templateType} onChange={setTemplateType}
-          options={['Request Received', 'Approved', 'Rejected', 'Refunded']} />
-
-        <label className="text-[12px] font-medium text-muted block mt-5 mb-1.5">Subject line</label>
-        <Input value={subject} onChange={(e: any) => setSubject(e.target.value)} />
-
-        <label className="text-[12px] font-medium text-muted block mt-5 mb-1.5">Body</label>
-        <Textarea value={body} onChange={(e: any) => setBody(e.target.value)} rows={11} className="font-mono text-[12.5px]" />
-
-        <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
-          <span className="text-faint mr-1">Variables:</span>
-          {['{{customer_name}}','{{rma_number}}','{{order_number}}','{{refund_amount}}'].map(v => (
-            <span key={v} className="px-1.5 py-0.5 rounded bg-accent/10 text-accent2 font-mono">{v}</span>
-          ))}
-        </div>
-
-        <SaveBar onSave={handleSave} onDiscard={() => {
-          const t = templates.find((t: any) => t.type === templateType);
-          if (t) { setSubject(t.subject); setBody(t.body); }
-        }} isSaving={isSaving} />
-      </div>
-
-      <div className="lg:col-span-2">
-        <div className="text-[12px] font-medium text-muted mb-2 flex items-center gap-1.5"><Icon name="Eye" size={12}/> Live preview</div>
-        <div className="bg-[#f6f6f8] rounded-lg border border-border shadow-pop overflow-hidden">
-          <div className="bg-white px-5 py-3 border-b border-[#e6e6ec] flex items-center gap-2">
-            <div className="w-7 h-7 rounded grid place-content-center text-white text-[11px] font-bold"
-                 style={{ background: 'linear-gradient(135deg,#6C63FF,#8B5CF6)' }}>A</div>
-            <div>
-              <div className="text-[12.5px] font-semibold text-[#111]">Acme Store</div>
-              <div className="text-[10.5px] text-[#666]">to sarah.johnson@email.com</div>
-            </div>
-          </div>
-          <div className="px-5 py-4 bg-white">
-            <div className="text-[14px] font-semibold text-[#111] mb-3">{fill(subject)}</div>
-            <pre className="text-[12.5px] text-[#333] whitespace-pre-wrap font-sans leading-relaxed">{fill(body)}</pre>
-            <div className="mt-4 pt-4 border-t border-[#e6e6ec]">
-              <button className="w-full h-9 rounded text-[12.5px] font-semibold text-white"
-                      style={{ background: '#6C63FF' }}>View return status</button>
-            </div>
-          </div>
-          <div className="bg-[#f1f1f5] px-5 py-2.5 text-[10.5px] text-[#888] text-center">Sent by ReturnFlow · Acme Store</div>
-        </div>
-      </div>
     </div>
   );
 }

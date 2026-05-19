@@ -3,10 +3,10 @@ import { Link, useLocation, useLoaderData, useFetcher } from "react-router";
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { Icon, StatusBadge, Btn, Card, Modal, Textarea, Toggle, useToast, STATUS_STYLES, Input } from "../components/ui";
+import { Icon, StatusBadge, Btn, Card, Modal, Textarea, Toggle, useToast, STATUS_STYLES, Input, Select } from "../components/ui";
 import { REFUND_TYPES } from "../components/mock-data";
 import { sendReturnEmail } from "../lib/mailer.server";
-import { getTrackingUrl, getCarrierDisplayName, getEstimatedTransitLabel } from "../lib/carriers";
+import { getTrackingUrl, getCarrierDisplayName, getEstimatedTransitLabel, CARRIER_OPTIONS, OTHER_CARRIER } from "../lib/carriers";
 import { evaluateOnboarding } from "../lib/onboarding.server";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
@@ -789,18 +789,16 @@ export default function ReturnDetailPage() {
             {isShipped && (
               <>
                 <Btn variant="primary" className="w-full" size="lg" icon="PackageCheck" onClick={handleMarkReceived} disabled={fetcher.state !== 'idle'}>Mark as Received</Btn>
-                {(r.trackingUrl || (r.carrier && r.trackingNumber)) && (
-                  <a
-                    href={r.trackingUrl ?? getTrackingUrl(r.carrier, r.trackingNumber) ?? '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block mt-2.5"
-                  >
-                    <Btn variant="secondary" className="w-full" size="lg" icon="ExternalLink">
-                      Track live · {getCarrierDisplayName(r.carrier)}
-                    </Btn>
-                  </a>
-                )}
+                {(() => {
+                  const url = r.trackingUrl ?? getTrackingUrl(r.carrier, r.trackingNumber);
+                  return url ? (
+                    <a href={url} target="_blank" rel="noopener noreferrer" className="block mt-2.5">
+                      <Btn variant="secondary" className="w-full" size="lg" icon="ExternalLink">
+                        Track live · {getCarrierDisplayName(r.carrier)}
+                      </Btn>
+                    </a>
+                  ) : null;
+                })()}
                 <div className="mt-3 px-3 py-2.5 rounded-md bg-[#10B981]/10 border border-[#10B981]/20 text-[12px] text-[#10B981] flex items-start gap-2">
                   <Icon name="Truck" size={14} className="mt-0.5 shrink-0" />
                   <div>
@@ -921,10 +919,7 @@ export default function ReturnDetailPage() {
             The customer will be emailed shipping instructions. Optionally provide a prepaid label below.
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[12px] font-medium text-muted block mb-1.5">Carrier</label>
-              <Input value={carrier} onChange={(e: any) => setCarrier(e.target.value)} placeholder="e.g. FedEx" />
-            </div>
+            <CarrierField value={carrier} onChange={setCarrier} />
             <div>
               <label className="text-[12px] font-medium text-muted block mb-1.5">Tracking Number</label>
               <Input value={trackingNumber} onChange={(e: any) => setTrackingNumber(e.target.value)} placeholder="e.g. 1Z999..." />
@@ -962,10 +957,7 @@ export default function ReturnDetailPage() {
             Confirm that the customer has shipped the items back. Add tracking info if available.
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[12px] font-medium text-muted block mb-1.5">Carrier</label>
-              <Input value={shipCarrier} onChange={(e: any) => setShipCarrier(e.target.value)} placeholder="e.g. USPS" />
-            </div>
+            <CarrierField value={shipCarrier} onChange={setShipCarrier} />
             <div>
               <label className="text-[12px] font-medium text-muted block mb-1.5">Tracking Number</label>
               <Input value={shipTracking} onChange={(e: any) => setShipTracking(e.target.value)} placeholder="e.g. 9400..." />
@@ -1087,6 +1079,47 @@ function Row({ label, value, strong, muted }: any) {
     <div className="flex items-center justify-between">
       <span className="text-muted">{label}</span>
       <span className={`tabular-nums ${strong ? 'text-ink font-semibold text-[15px]' : muted ? 'text-faint' : 'text-ink'}`}>{value}</span>
+    </div>
+  );
+}
+
+/**
+ * Dropdown of supported carriers (FedEx/UPS/USPS/DHL/Colissimo…) plus an
+ * "Other" option that reveals a free-text input for unlisted carriers.
+ * Picking a listed carrier guarantees a working "Track live" deep-link;
+ * "Other" stores the typed value but the tracking link is hidden.
+ */
+function CarrierField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const presetValues = CARRIER_OPTIONS.map(o => o.value).filter(v => v !== OTHER_CARRIER);
+  const isPreset = !!value && presetValues.includes(value);
+  const startsOther = !!value && !isPreset;
+  const [otherMode, setOtherMode] = useState(startsOther);
+  const dropdownValue = otherMode ? OTHER_CARRIER : (isPreset ? value : '');
+
+  return (
+    <div>
+      <label className="text-[12px] font-medium text-muted block mb-1.5">Carrier</label>
+      <Select
+        value={dropdownValue}
+        onChange={(v: string) => {
+          if (v === OTHER_CARRIER) {
+            setOtherMode(true);
+            onChange('');
+          } else {
+            setOtherMode(false);
+            onChange(v);
+          }
+        }}
+        options={[{ value: '', label: 'Select a carrier…' }, ...CARRIER_OPTIONS]}
+      />
+      {otherMode && (
+        <Input
+          value={value}
+          onChange={(e: any) => onChange(e.target.value)}
+          placeholder="Enter carrier name"
+          className="mt-2"
+        />
+      )}
     </div>
   );
 }
