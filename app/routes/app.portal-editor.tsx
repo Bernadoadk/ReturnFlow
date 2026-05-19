@@ -552,62 +552,85 @@ function LayoutPicker({ value, brandColor, onChange }: {
 }
 
 function LayoutThumb({ layout, brandColor, active }: { layout: string; brandColor: string; active: boolean }) {
-  const c = active ? brandColor : "#c4c4d0";
+  const c       = active ? brandColor : "#c4c4d0";
+  const surface = "#f4f6fa";
 
   if (layout === "classic") return (
-    <div style={{ width: 40, height: 30, borderRadius: 5, overflow: "hidden", border: "1px solid #e6e6ec", background: "#f8fafc", display: "flex", flexDirection: "column" }}>
-      <div style={{ height: 7, background: "#fff", borderBottom: "1px solid #e6e6ec", flexShrink: 0 }} />
-      <div style={{ height: 5, display: "flex", alignItems: "center", gap: 2, padding: "0 4px", borderBottom: "1px solid #e6e6ec", flexShrink: 0 }}>
-        {[0,1,2,3,4].map(i => <div key={i} style={{ flex: 1, height: 2, borderRadius: 99, background: i === 0 ? c : "#e6e6ec" }} />)}
+    <div style={{ width: 42, height: 32, borderRadius: 6, overflow: "hidden", border: "1px solid #e6e6ec", background: surface, display: "flex", flexDirection: "column", boxShadow: "0 1px 2px rgba(15,17,23,0.04)" }}>
+      <div style={{ height: 8, background: "#fff", flexShrink: 0, display: "flex", alignItems: "center", paddingLeft: 3, gap: 2 }}>
+        <div style={{ width: 4, height: 4, borderRadius: 1.5, background: c }} />
+        <div style={{ width: 8, height: 2, borderRadius: 99, background: "#d8dce5" }} />
       </div>
-      <div style={{ flex: 1, margin: "2px 2px", borderRadius: 3, background: "#fff", border: "1px solid #e6e6ec" }} />
+      <div style={{ height: 1, background: c, opacity: 0.55 }} />
+      <div style={{ height: 5, display: "flex", alignItems: "center", gap: 1.5, padding: "0 4px", flexShrink: 0, marginTop: 1.5 }}>
+        <div style={{ width: 3, height: 3, borderRadius: "50%", background: c }} />
+        <div style={{ flex: 1, height: 1.5, borderRadius: 99, background: c, opacity: 0.5 }} />
+        <div style={{ width: 3, height: 3, borderRadius: "50%", background: "#0f1117" }} />
+        <div style={{ flex: 1, height: 1.5, borderRadius: 99, background: "#e6e6ec" }} />
+        <div style={{ width: 3, height: 3, borderRadius: "50%", background: "#e6e6ec" }} />
+      </div>
+      <div style={{ flex: 1, margin: "2px 3px 3px", borderRadius: 3, background: "#fff", border: "1px solid #e6e6ec", boxShadow: "0 1px 2px rgba(15,17,23,0.03)" }} />
     </div>
   );
 
   if (layout === "minimal") return (
-    <div style={{ width: 40, height: 30, borderRadius: 5, overflow: "hidden", border: "1px solid #e6e6ec", background: "#fff", display: "flex", flexDirection: "column" }}>
-      <div style={{ height: 2, background: c, flexShrink: 0 }} />
-      <div style={{ padding: "2px 3px", flexShrink: 0 }}>
-        <div style={{ height: 3, width: 14, borderRadius: 99, background: c + "50", marginBottom: 2 }} />
-        <div style={{ display: "flex", gap: 2 }}>
-          {[0,1,2,3,4].map(i => <div key={i} style={{ width: 4, height: 4, borderRadius: "50%", background: i === 0 ? c : "#e6e6ec" }} />)}
+    <div style={{ width: 42, height: 32, borderRadius: 6, overflow: "hidden", border: "1px solid #e6e6ec", background: "#fff", display: "flex", flexDirection: "column" }}>
+      <div style={{ height: 1.5, background: c, flexShrink: 0 }} />
+      <div style={{ padding: "3px 4px 0", flexShrink: 0 }}>
+        <div style={{ height: 2, width: 12, borderRadius: 99, background: "#0f1117", marginBottom: 3 }} />
+        <div style={{ height: 1.5, borderRadius: 99, background: "#eef0f4", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, width: "22%", background: c, borderRadius: 99 }} />
         </div>
       </div>
-      <div style={{ flex: 1, margin: "0 2px 2px", borderRadius: 3, background: "#f8fafc", border: "1px solid #e6e6ec" }} />
+      <div style={{ flex: 1, padding: "3px 4px 4px", display: "flex", flexDirection: "column", gap: 1.5, justifyContent: "center" }}>
+        <div style={{ height: 2.5, width: "60%", borderRadius: 99, background: "#0f1117" }} />
+        <div style={{ height: 1.5, width: "85%", borderRadius: 99, background: "#d8dce5" }} />
+        <div style={{ height: 1.5, width: "70%", borderRadius: 99, background: "#d8dce5" }} />
+      </div>
     </div>
   );
 
   if (layout === "bold") return (
-    <div style={{ width: 40, height: 30, borderRadius: 5, overflow: "hidden", border: "1px solid #e6e6ec", background: "#f8fafc", display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: "2px 3px 4px", background: c, flexShrink: 0 }}>
-        <div style={{ height: 3, width: 18, borderRadius: 99, background: "rgba(255,255,255,0.8)", marginBottom: 2 }} />
-        <div style={{ display: "flex", gap: 1.5 }}>
-          {[0,1,2,3,4].map(i => <div key={i} style={{ flex: 1, height: 1.5, borderRadius: 99, background: i === 0 ? "#fff" : "rgba(255,255,255,0.35)" }} />)}
+    <div style={{ width: 42, height: 32, borderRadius: 6, overflow: "hidden", border: "1px solid #e6e6ec", background: surface, display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "3px 4px 5px", background: `linear-gradient(135deg, ${c}, ${c}cc)`, flexShrink: 0, position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -3, right: -3, width: 10, height: 10, borderRadius: "50%", background: "rgba(255,255,255,0.2)" }} />
+        <div style={{ height: 2.5, width: 14, borderRadius: 99, background: "rgba(255,255,255,0.95)", marginBottom: 2.5, position: "relative" }} />
+        <div style={{ display: "flex", gap: 1.5, position: "relative" }}>
+          {[0,1,2,3,4].map(i => <div key={i} style={{ flex: 1, height: 1.5, borderRadius: 99, background: i === 0 ? "#fff" : "rgba(255,255,255,0.4)" }} />)}
         </div>
       </div>
-      <div style={{ flex: 1, margin: "-2px 3px 2px", borderRadius: 4, background: "#fff", border: "1px solid #e6e6ec", boxShadow: "0 1px 4px rgba(0,0,0,0.1)" }} />
+      <div style={{ flex: 1, margin: "-3px 3px 3px", borderRadius: 4, background: "#fff", border: "1px solid #e6e6ec", boxShadow: `0 2px 8px -2px ${c}40` }} />
     </div>
   );
 
   if (layout === "sidebar") return (
-    <div style={{ width: 40, height: 30, borderRadius: 5, overflow: "hidden", border: "1px solid #e6e6ec", background: "#f8fafc", display: "flex" }}>
-      <div style={{ width: 12, flexShrink: 0, background: c + "18", borderRight: "1px solid #e6e6ec", padding: "3px 2px", display: "flex", flexDirection: "column", gap: 2 }}>
-        {[0,1,2,3,4].map(i => <div key={i} style={{ height: 2, borderRadius: 99, background: i === 0 ? c : "#d1d5db" }} />)}
+    <div style={{ width: 42, height: 32, borderRadius: 6, overflow: "hidden", border: "1px solid #e6e6ec", background: surface, display: "flex" }}>
+      <div style={{ width: 14, flexShrink: 0, background: "#fff", borderRight: "1px solid #e6e6ec", padding: "3px 2px", display: "flex", flexDirection: "column", gap: 1.5 }}>
+        <div style={{ width: 4, height: 4, borderRadius: 1.5, background: c, marginBottom: 1 }} />
+        {[0,1,2,3].map(i => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 1.5, height: 2.5, paddingLeft: 1, background: i === 0 ? `${c}25` : "transparent", borderRadius: 1.5 }}>
+            <div style={{ width: 1.5, height: 1.5, borderRadius: "50%", background: i === 0 ? c : "#d8dce5" }} />
+            <div style={{ flex: 1, height: 1, borderRadius: 99, background: i === 0 ? c : "#d8dce5", opacity: i === 0 ? 1 : 0.6 }} />
+          </div>
+        ))}
       </div>
-      <div style={{ flex: 1, padding: 2 }}>
-        <div style={{ height: 4, borderRadius: 3, background: c + "40", marginBottom: 2 }} />
-        <div style={{ flex: 1, borderRadius: 3, background: "#fff", border: "1px solid #e6e6ec", height: 18 }} />
+      <div style={{ flex: 1, padding: 2.5 }}>
+        <div style={{ height: 1.5, width: "50%", borderRadius: 99, background: "#d8dce5", marginBottom: 2 }} />
+        <div style={{ height: 20, borderRadius: 3, background: "#fff", border: "1px solid #e6e6ec", boxShadow: "0 1px 2px rgba(15,17,23,0.04)" }} />
       </div>
     </div>
   );
 
   if (layout === "compact") return (
-    <div style={{ width: 40, height: 30, borderRadius: 5, overflow: "hidden", border: "1px solid #e6e6ec", background: "#f8fafc", display: "flex", flexDirection: "column" }}>
-      <div style={{ height: 6, background: "#fff", borderBottom: "1px solid #e6e6ec", flexShrink: 0 }} />
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 2.5, padding: "2px 0", flexShrink: 0 }}>
-        {[0,1,2,3,4].map(i => <div key={i} style={{ width: 3.5, height: 3.5, borderRadius: "50%", background: i === 0 ? c : "#e6e6ec" }} />)}
+    <div style={{ width: 42, height: 32, borderRadius: 6, overflow: "hidden", border: "1px solid #e6e6ec", background: "#fff", display: "flex", flexDirection: "column" }}>
+      <div style={{ height: 1.5, background: "#eef0f4", position: "relative", flexShrink: 0 }}>
+        <div style={{ position: "absolute", inset: 0, width: "40%", background: c }} />
       </div>
-      <div style={{ flex: 1, margin: "0 3px 3px", borderRadius: 3, background: "#fff", border: "1px solid #e6e6ec" }} />
+      <div style={{ height: 6, background: "rgba(255,255,255,0.85)", borderBottom: "1px solid #eef0f4", flexShrink: 0, display: "flex", alignItems: "center", padding: "0 3px", gap: 2 }}>
+        <div style={{ width: 3, height: 3, borderRadius: 1, background: c }} />
+        <div style={{ width: 6, height: 1.5, borderRadius: 99, background: "#d8dce5" }} />
+      </div>
+      <div style={{ flex: 1, margin: 3, borderRadius: 3, background: "#fafbfc", border: "1px solid #e6e6ec" }} />
     </div>
   );
 
@@ -887,26 +910,66 @@ function StepContent({ s, step }: { s: EditorSettings; step: number }) {
 
 function HStepper({ s, step, labels, light = false }: { s: EditorSettings; step: number; labels: string[]; light?: boolean }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
       {labels.map((label, i) => {
         const idx    = i + 1;
         const isDone = idx < step;
         const isCurr = idx === step;
-        const dotBg  = isDone ? s.brandColor : isCurr ? (light ? "#fff" : "#0f1117") : "transparent";
-        const dotBorder = isDone || isCurr ? "none" : `1.5px solid ${light ? "rgba(255,255,255,0.4)" : "#d8dce5"}`;
-        const dotColor  = isDone || isCurr ? (light && !isDone ? s.brandColor : "#fff") : (light ? "rgba(255,255,255,0.5)" : "#aaa");
+
+        const dotBg = isDone
+          ? s.brandColor
+          : isCurr
+            ? (light ? "#fff" : "#0f1117")
+            : (light ? "rgba(255,255,255,0.10)" : "#fff");
+        const dotBorder = !isDone && !isCurr
+          ? (light ? "1.5px solid rgba(255,255,255,0.3)" : "1.5px solid #e2e5ec")
+          : "none";
+        const dotColor = isDone
+          ? "#fff"
+          : isCurr
+            ? (light ? s.brandColor : "#fff")
+            : (light ? "rgba(255,255,255,0.55)" : "#94a3b8");
+        const dotShadow = isCurr
+          ? (light
+              ? "0 0 0 4px rgba(255,255,255,0.18), 0 4px 12px -2px rgba(0,0,0,0.15)"
+              : `0 0 0 4px ${s.brandColor}24, 0 4px 12px -2px rgba(15,17,23,0.18)`)
+          : isDone
+            ? `0 2px 6px -2px ${s.brandColor}55`
+            : "none";
+        const labelColor = light
+          ? (isCurr || isDone ? "#fff" : "rgba(255,255,255,0.55)")
+          : (isCurr ? "#0f1117" : isDone ? "#475569" : "#94a3b8");
+
+        const lineColor = light
+          ? (idx < step ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.18)")
+          : (idx < step ? s.brandColor : "#eef0f4");
+
         return (
           <React.Fragment key={label}>
-            <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
-              <div style={{ width: 20, height: 20, borderRadius: "50%", display: "grid", placeContent: "center", fontSize: 10, fontWeight: 700, background: dotBg, border: dotBorder, color: dotColor, flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+              <div style={{
+                width: isCurr ? 22 : 20,
+                height: isCurr ? 22 : 20,
+                borderRadius: "50%",
+                display: "grid",
+                placeContent: "center",
+                fontSize: 10,
+                fontWeight: 700,
+                background: dotBg,
+                border: dotBorder,
+                color: dotColor,
+                boxShadow: dotShadow,
+                flexShrink: 0,
+                transition: "all 0.25s ease",
+              }}>
                 {isDone ? "✓" : idx}
               </div>
-              <span style={{ fontSize: 10.5, fontWeight: 500, color: light ? (isCurr || isDone ? "#fff" : "rgba(255,255,255,0.5)") : (isCurr || isDone ? "#0f1117" : "#aaa") }}>
+              <span style={{ fontSize: 10.5, fontWeight: isCurr ? 700 : 500, color: labelColor, letterSpacing: "-0.005em" }}>
                 {label}
               </span>
             </div>
             {i < labels.length - 1 && (
-              <div style={{ flex: 1, height: 1, minWidth: 8, background: light ? (idx < step ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.2)") : (idx < step ? s.brandColor : "#e6e6ec") }} />
+              <div style={{ flex: 1, height: 2, minWidth: 10, borderRadius: 99, background: lineColor, transition: "background 0.3s ease" }} />
             )}
           </React.Fragment>
         );
@@ -922,33 +985,51 @@ const STEP_LABELS_DEFAULT = ["Find Order", "Select Items", "Reason", "Refund Typ
 function PreviewClassic({ s, step, shop }: { s: EditorSettings; step: number; shop: string }) {
   const storeName = s.portalStoreName || shop.split(".")[0];
   return (
-    <div style={{ background: "#F8FAFC" }}>
-      <header style={{ background: s.bannerColor, borderBottom: "1px solid #e6e6ec" }}>
-        <div style={{ padding: "0 20px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div style={{ background: "#F7F8FB" }}>
+      <header style={{ position: "relative", background: s.bannerColor || "#fff", borderBottom: "1px solid #eef0f4" }}>
+        <div style={{ padding: "0 24px", height: 64, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
             {s.logoUrl ? (
-              <img src={s.logoUrl} alt="Logo" style={{ height: 32, width: "auto", objectFit: "contain" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              <img src={s.logoUrl} alt="Logo" style={{ height: 34, width: "auto", objectFit: "contain" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
             ) : (
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: s.brandColor, display: "grid", placeContent: "center", color: "#fff", fontSize: 12, fontWeight: 700 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 10,
+                background: "#fff",
+                display: "grid", placeContent: "center",
+                color: s.brandColor, fontSize: 14, fontWeight: 800,
+                boxShadow: `0 0 0 1px ${s.brandColor}33, 0 6px 16px -4px ${s.brandColor}40`,
+              }}>
                 {storeName.charAt(0).toUpperCase()}
               </div>
             )}
             <div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "#0f1117" }}>{storeName}</div>
-              <div style={{ fontSize: 10.5, color: "#888" }}>Return Center</div>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: "#0f1117", letterSpacing: "-0.01em", lineHeight: 1.15 }}>{storeName}</div>
+              <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600, marginTop: 1 }}>Return Center</div>
             </div>
           </div>
-          <span style={{ fontSize: 11.5, color: "#888" }}>← {s.labelBackToStore || "Back to store"}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "#475569", padding: "6px 11px", borderRadius: 99, background: "rgba(15,23,42,0.04)" }}>
+            <span style={{ fontSize: 11 }}>←</span> {s.labelBackToStore || "Back to store"}
+          </div>
         </div>
+        <div style={{ position: "absolute", bottom: -1, left: 0, right: 0, height: 1, background: `linear-gradient(90deg, transparent, ${s.brandColor}, transparent)`, opacity: 0.55 }} />
       </header>
-      <div style={{ padding: "20px 20px 24px" }}>
+      <div style={{ padding: "24px 24px 28px" }}>
         <HStepper s={s} step={step} labels={STEP_LABELS_DEFAULT} />
-        <div style={{ marginTop: 16, background: "#fff", borderRadius: 16, border: "1px solid #e6e6ec", boxShadow: "0 4px 20px rgba(15,17,23,0.05)", padding: "20px 24px" }}>
+        <div style={{
+          marginTop: 20,
+          background: "#fff",
+          borderRadius: 18,
+          border: "1px solid #eef0f4",
+          boxShadow: "0 1px 2px rgba(15,17,23,0.04), 0 10px 28px -10px rgba(15,17,23,0.10)",
+          padding: "24px 26px",
+        }}>
           <StepContent s={s} step={step} />
         </div>
-        <div style={{ textAlign: "center", fontSize: 11.5, color: "#888", marginTop: 16 }}>
-          Need help? <span style={{ textDecoration: "underline", color: s.brandColor }}>{s.footerContact || `support@${shop.split(".")[0]}.com`}</span>
-          <div style={{ marginTop: 6, fontSize: 10.5, color: "#aaa" }}>🔒 {s.labelPoweredBy || "Secured by ReturnFlow"}</div>
+        <div style={{ textAlign: "center", fontSize: 11.5, color: "#94a3b8", marginTop: 18 }}>
+          Need help? <span style={{ textDecoration: "underline", color: s.brandColor, fontWeight: 500 }}>{s.footerContact || `support@${shop.split(".")[0]}.com`}</span>
+          <div style={{ marginTop: 5, fontSize: 10.5, color: "#cbd5e1", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <span>🔒</span> {s.labelPoweredBy || "Secured by ReturnFlow"}
+          </div>
         </div>
       </div>
     </div>
@@ -959,42 +1040,34 @@ function PreviewClassic({ s, step, shop }: { s: EditorSettings; step: number; sh
 
 function PreviewMinimal({ s, step, shop }: { s: EditorSettings; step: number; shop: string }) {
   const storeName = s.portalStoreName || shop.split(".")[0];
+  const total = STEP_LABELS_DEFAULT.length;
+  const pct = ((step - 1) / (total - 1)) * 100;
   return (
     <div style={{ background: "#fff" }}>
-      <div style={{ height: 3, background: s.brandColor }} />
-      <div style={{ padding: "14px 24px 10px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {s.logoUrl ? (
-            <img src={s.logoUrl} alt="Logo" style={{ height: 24, width: "auto", objectFit: "contain" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-          ) : (
-            <span style={{ fontSize: 14, fontWeight: 700, color: "#0f1117" }}>{storeName}</span>
-          )}
-        </div>
-        <span style={{ fontSize: 11, color: "#aaa" }}>← {s.labelBackToStore || "Back to store"}</span>
+      <div style={{ height: 2, background: `linear-gradient(90deg, ${s.brandColor}, ${s.brandColor}55, transparent)` }} />
+      <div style={{ maxWidth: 540, margin: "0 auto", padding: "22px 28px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        {s.logoUrl ? (
+          <img src={s.logoUrl} alt="Logo" style={{ height: 26, width: "auto", objectFit: "contain" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        ) : (
+          <span style={{ fontSize: 15.5, fontWeight: 700, color: "#0f1117", letterSpacing: "-0.025em" }}>{storeName}</span>
+        )}
+        <span style={{ fontSize: 11, color: "#94a3b8" }}>← {s.labelBackToStore || "Back to store"}</span>
       </div>
-      <div style={{ padding: "0 24px 8px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {STEP_LABELS_DEFAULT.map((_, i) => {
-            const idx = i + 1;
-            const done = idx < step;
-            const curr = idx === step;
-            return (
-              <React.Fragment key={i}>
-                <div style={{ width: 20, height: 20, borderRadius: "50%", display: "grid", placeContent: "center", fontSize: 10, fontWeight: 700, background: done ? s.brandColor : curr ? "#0f1117" : "#f0f0f5", color: done || curr ? "#fff" : "#aaa" }}>
-                  {done ? "✓" : idx}
-                </div>
-                {i < STEP_LABELS_DEFAULT.length - 1 && <div style={{ flex: 1, height: 1, background: done ? s.brandColor : "#e6e6ec" }} />}
-              </React.Fragment>
-            );
-          })}
+      <div style={{ maxWidth: 540, margin: "0 auto", padding: "12px 28px 18px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontSize: 9.5, fontWeight: 700, color: "#0f1117", textTransform: "uppercase", letterSpacing: "0.14em" }}>
+            Step {step} <span style={{ color: "#cbd5e1" }}> / {total}</span>
+          </span>
+          <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 500 }}>{STEP_LABELS_DEFAULT[step - 1]}</span>
+        </div>
+        <div style={{ height: 3, borderRadius: 99, background: "#eef0f4", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${s.brandColor}, ${s.brandColor}aa)`, borderRadius: 99, transition: "width 0.4s ease" }} />
         </div>
       </div>
-      <div style={{ padding: "0 16px 20px" }}>
-        <div style={{ background: "#fafbfc", borderRadius: 12, border: "1px solid #e6e6ec", padding: "16px 20px" }}>
-          <StepContent s={s} step={step} />
-        </div>
-        <div style={{ textAlign: "center", fontSize: 11, color: "#aaa", marginTop: 12 }}>
-          {s.labelPoweredBy || "Secured by ReturnFlow"}
+      <div style={{ maxWidth: 540, margin: "0 auto", padding: "0 28px 32px" }}>
+        <StepContent s={s} step={step} />
+        <div style={{ textAlign: "center", fontSize: 10, color: "#cbd5e1", marginTop: 26, letterSpacing: "0.05em", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+          <span>🔒</span> {s.labelPoweredBy || "Secured by ReturnFlow"}
         </div>
       </div>
     </div>
@@ -1006,33 +1079,54 @@ function PreviewMinimal({ s, step, shop }: { s: EditorSettings; step: number; sh
 function PreviewBold({ s, step, shop }: { s: EditorSettings; step: number; shop: string }) {
   const storeName = s.portalStoreName || shop.split(".")[0];
   return (
-    <div style={{ background: "#F8FAFC" }}>
-      <div style={{ background: s.brandColor, padding: "16px 20px 28px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div style={{ background: "#F7F8FB" }}>
+      <div style={{
+        position: "relative",
+        background: `linear-gradient(135deg, ${s.brandColor} 0%, color-mix(in srgb, ${s.brandColor} 75%, #000) 100%)`,
+        padding: "22px 24px 48px",
+        overflow: "hidden",
+      }}>
+        <div style={{ position: "absolute", top: -50, right: -40, width: 180, height: 180, borderRadius: "50%", background: "rgba(255,255,255,0.10)", filter: "blur(8px)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", bottom: -40, left: -30, width: 140, height: 140, borderRadius: "50%", background: "rgba(255,255,255,0.06)", filter: "blur(4px)", pointerEvents: "none" }} />
+        <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
             {s.logoUrl ? (
-              <img src={s.logoUrl} alt="Logo" style={{ height: 28, width: "auto", objectFit: "contain", filter: "brightness(10)" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              <img src={s.logoUrl} alt="Logo" style={{ height: 30, width: "auto", objectFit: "contain", filter: "brightness(10)" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
             ) : (
-              <div style={{ background: "rgba(255,255,255,0.25)", borderRadius: 8, width: 28, height: 28, display: "grid", placeContent: "center", color: "#fff", fontSize: 12, fontWeight: 700 }}>
+              <div style={{
+                background: "rgba(255,255,255,0.18)",
+                borderRadius: 10, width: 34, height: 34,
+                display: "grid", placeContent: "center",
+                color: "#fff", fontSize: 14, fontWeight: 800,
+                boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25), 0 4px 14px -2px rgba(0,0,0,0.2)",
+              }}>
                 {storeName.charAt(0).toUpperCase()}
               </div>
             )}
             <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{storeName}</div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)" }}>Return Center</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em", lineHeight: 1.15 }}>{storeName}</div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.7)", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600, marginTop: 1 }}>Return Center</div>
             </div>
           </div>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>← {s.labelBackToStore || "Back to store"}</span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.85)", padding: "5px 11px", borderRadius: 99, background: "rgba(255,255,255,0.14)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.18)" }}>← {s.labelBackToStore || "Back to store"}</span>
         </div>
-        <HStepper s={s} step={step} labels={STEP_LABELS_DEFAULT} light />
+        <div style={{ position: "relative" }}>
+          <HStepper s={s} step={step} labels={STEP_LABELS_DEFAULT} light />
+        </div>
       </div>
-      <div style={{ padding: "0 16px 20px", marginTop: -14 }}>
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e6e6ec", boxShadow: "0 8px 30px rgba(15,17,23,0.1)", padding: "20px 24px" }}>
+      <div style={{ padding: "0 18px 24px", marginTop: -28 }}>
+        <div style={{
+          background: "#fff",
+          borderRadius: 20,
+          border: "1px solid rgba(15,17,23,0.04)",
+          boxShadow: `0 24px 48px -16px ${s.brandColor}33, 0 4px 12px -4px rgba(15,17,23,0.08)`,
+          padding: "24px 26px",
+        }}>
           <StepContent s={s} step={step} />
         </div>
-        <div style={{ textAlign: "center", fontSize: 11.5, color: "#888", marginTop: 14 }}>
-          Need help? <span style={{ textDecoration: "underline", color: s.brandColor }}>{s.footerContact || `support@${shop.split(".")[0]}.com`}</span>
-          <div style={{ marginTop: 4, fontSize: 10.5, color: "#aaa" }}>🔒 {s.labelPoweredBy || "Secured by ReturnFlow"}</div>
+        <div style={{ textAlign: "center", fontSize: 11.5, color: "#94a3b8", marginTop: 18 }}>
+          Need help? <span style={{ textDecoration: "underline", color: s.brandColor, fontWeight: 500 }}>{s.footerContact || `support@${shop.split(".")[0]}.com`}</span>
+          <div style={{ marginTop: 5, fontSize: 10.5, color: "#cbd5e1" }}>🔒 {s.labelPoweredBy || "Secured by ReturnFlow"}</div>
         </div>
       </div>
     </div>
@@ -1044,18 +1138,37 @@ function PreviewBold({ s, step, shop }: { s: EditorSettings; step: number; shop:
 function PreviewSidebar({ s, step, shop }: { s: EditorSettings; step: number; shop: string }) {
   const storeName = s.portalStoreName || shop.split(".")[0];
   return (
-    <div style={{ background: "#F8FAFC", display: "flex", minHeight: 420 }}>
+    <div style={{ background: "#FAFBFD", display: "flex", minHeight: 460 }}>
       {/* Left sidebar */}
-      <div style={{ width: 180, flexShrink: 0, background: "#fff", borderRight: "1px solid #e6e6ec", padding: "20px 16px", display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 20 }}>
+      <div style={{
+        width: 210, flexShrink: 0,
+        background: "#fff",
+        borderRight: "1px solid #eef0f4",
+        padding: "22px 14px",
+        display: "flex", flexDirection: "column",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 24, padding: "0 4px" }}>
           {s.logoUrl ? (
-            <img src={s.logoUrl} alt="Logo" style={{ height: 24, width: "auto", objectFit: "contain" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            <img src={s.logoUrl} alt="Logo" style={{ height: 26, width: "auto", objectFit: "contain" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
           ) : (
-            <div style={{ width: 28, height: 28, borderRadius: 6, background: s.brandColor, display: "grid", placeContent: "center", color: "#fff", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 9,
+              background: s.brandColor,
+              display: "grid", placeContent: "center",
+              color: "#fff", fontSize: 13, fontWeight: 800, flexShrink: 0,
+              boxShadow: `0 4px 12px -2px ${s.brandColor}50`,
+            }}>
               {storeName.charAt(0).toUpperCase()}
             </div>
           )}
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#0f1117", lineHeight: 1.2 }}>{storeName}</div>
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#0f1117", lineHeight: 1.15 }}>{storeName}</div>
+            <div style={{ fontSize: 9, color: "#94a3b8", letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700, marginTop: 1 }}>Returns</div>
+          </div>
+        </div>
+
+        <div style={{ fontSize: 9, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.14em", fontWeight: 700, marginBottom: 8, paddingLeft: 8 }}>
+          Your return
         </div>
         <div style={{ flex: 1 }}>
           {STEP_LABELS_DEFAULT.map((label, i) => {
@@ -1063,24 +1176,58 @@ function PreviewSidebar({ s, step, shop }: { s: EditorSettings; step: number; sh
             const done = idx < step;
             const curr = idx === step;
             return (
-              <div key={label} style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 12 }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0 }}>
-                  <div style={{ width: 20, height: 20, borderRadius: "50%", display: "grid", placeContent: "center", fontSize: 9, fontWeight: 700, background: done ? s.brandColor : curr ? "#0f1117" : "#f0f0f5", color: done || curr ? "#fff" : "#aaa", flexShrink: 0 }}>
-                    {done ? "✓" : idx}
-                  </div>
-                  {i < STEP_LABELS_DEFAULT.length - 1 && <div style={{ width: 1, height: 16, background: done ? s.brandColor : "#e6e6ec", marginTop: 3 }} />}
+              <div key={label} style={{
+                position: "relative",
+                display: "flex", alignItems: "center", gap: 9,
+                padding: "7px 8px",
+                borderRadius: 8,
+                background: curr ? `${s.brandColor}10` : "transparent",
+                marginBottom: 2,
+              }}>
+                {curr && (
+                  <div style={{ position: "absolute", left: 0, top: "22%", bottom: "22%", width: 2.5, borderRadius: 99, background: s.brandColor }} />
+                )}
+                <div style={{
+                  width: 20, height: 20, borderRadius: "50%",
+                  display: "grid", placeContent: "center",
+                  fontSize: 9.5, fontWeight: 700,
+                  background: done ? s.brandColor : curr ? "#0f1117" : "#f1f5f9",
+                  color: done || curr ? "#fff" : "#94a3b8",
+                  flexShrink: 0,
+                  boxShadow: done ? `0 2px 6px -2px ${s.brandColor}66` : "none",
+                }}>
+                  {done ? "✓" : idx}
                 </div>
-                <span style={{ fontSize: 11, fontWeight: curr ? 600 : 400, color: curr || done ? "#0f1117" : "#aaa", paddingTop: 3 }}>{label}</span>
+                <span style={{ fontSize: 11, fontWeight: curr ? 700 : 500, color: curr ? "#0f1117" : done ? "#475569" : "#94a3b8", letterSpacing: "-0.005em" }}>{label}</span>
               </div>
             );
           })}
         </div>
-        <div style={{ fontSize: 10, color: "#aaa", marginTop: "auto" }}>{s.labelPoweredBy || "Secured by ReturnFlow"}</div>
+
+        <div style={{ borderTop: "1px solid #eef0f4", marginTop: 12, paddingTop: 12 }}>
+          <div style={{ fontSize: 10.5, color: "#475569", display: "flex", alignItems: "center", gap: 4, marginBottom: 5 }}>
+            <span>←</span> {s.labelBackToStore || "Back to store"}
+          </div>
+          <div style={{ fontSize: 9.5, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 4 }}>
+            <span>🔒</span> {s.labelPoweredBy || "Secured by ReturnFlow"}
+          </div>
+        </div>
       </div>
 
       {/* Right content */}
-      <div style={{ flex: 1, padding: 20 }}>
-        <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e6e6ec", boxShadow: "0 2px 12px rgba(15,17,23,0.04)", padding: "20px 24px", height: "100%" }}>
+      <div style={{ flex: 1, padding: "24px 26px", minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#94a3b8", marginBottom: 14 }}>
+          <span>Returns</span>
+          <span style={{ color: "#cbd5e1" }}>/</span>
+          <span style={{ color: "#0f1117", fontWeight: 600 }}>{STEP_LABELS_DEFAULT[step - 1]}</span>
+        </div>
+        <div style={{
+          background: "#fff",
+          borderRadius: 16,
+          border: "1px solid #eef0f4",
+          boxShadow: "0 1px 2px rgba(15,17,23,0.04), 0 10px 28px -12px rgba(15,17,23,0.08)",
+          padding: "22px 24px",
+        }}>
           <StepContent s={s} step={step} />
         </div>
       </div>
@@ -1092,43 +1239,61 @@ function PreviewSidebar({ s, step, shop }: { s: EditorSettings; step: number; sh
 
 function PreviewCompact({ s, step, shop }: { s: EditorSettings; step: number; shop: string }) {
   const storeName = s.portalStoreName || shop.split(".")[0];
+  const total = STEP_LABELS_DEFAULT.length;
+  const pct = (step / total) * 100;
   return (
-    <div style={{ background: "#F8FAFC" }}>
-      <header style={{ background: s.bannerColor || "#fff", borderBottom: "1px solid #e6e6ec", padding: "8px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+    <div style={{ background: "#fff", position: "relative" }}>
+      {/* Slim brand progress bar at very top */}
+      <div style={{ height: 2.5, background: "#eef0f4", position: "relative", overflow: "hidden" }}>
+        <div style={{
+          position: "absolute", inset: 0, width: `${pct}%`,
+          background: `linear-gradient(90deg, ${s.brandColor}, ${s.brandColor}aa)`,
+          transition: "width 0.4s ease",
+        }} />
+      </div>
+      <header style={{
+        background: s.bannerColor || "rgba(255,255,255,0.85)",
+        borderBottom: "1px solid #eef0f4",
+        padding: "0 18px",
+        height: 50,
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        backdropFilter: "blur(10px)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
           {s.logoUrl ? (
-            <img src={s.logoUrl} alt="Logo" style={{ height: 22, width: "auto", objectFit: "contain" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            <img src={s.logoUrl} alt="Logo" style={{ height: 24, width: "auto", objectFit: "contain" }} onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
           ) : (
-            <div style={{ width: 22, height: 22, borderRadius: 5, background: s.brandColor, display: "grid", placeContent: "center", color: "#fff", fontSize: 10, fontWeight: 700 }}>
+            <div style={{
+              width: 26, height: 26, borderRadius: 7,
+              background: s.brandColor,
+              display: "grid", placeContent: "center",
+              color: "#fff", fontSize: 11.5, fontWeight: 800,
+              boxShadow: `0 3px 8px -2px ${s.brandColor}66`,
+            }}>
               {storeName.charAt(0).toUpperCase()}
             </div>
           )}
-          <span style={{ fontSize: 12, fontWeight: 600, color: "#0f1117" }}>{storeName}</span>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#0f1117", letterSpacing: "-0.01em" }}>{storeName}</span>
+            <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, letterSpacing: "0.04em" }}>Step {step}/{total}</span>
+          </div>
         </div>
-        <span style={{ fontSize: 10.5, color: "#aaa" }}>← {s.labelBackToStore || "Back to store"}</span>
+        <span style={{ fontSize: 11, color: "#475569", display: "flex", alignItems: "center", gap: 3 }}>
+          <span>←</span> {s.labelBackToStore || "Back to store"}
+        </span>
       </header>
-      {/* Dot stepper */}
-      <div style={{ padding: "10px 16px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-        {STEP_LABELS_DEFAULT.map((_, i) => {
-          const idx  = i + 1;
-          const done = idx < step;
-          const curr = idx === step;
-          return (
-            <React.Fragment key={i}>
-              <div style={{ width: done || curr ? 20 : 8, height: 8, borderRadius: 99, transition: "all 0.2s", background: done ? s.brandColor : curr ? "#0f1117" : "#e6e6ec", display: "grid", placeContent: "center", fontSize: 8, color: "#fff", fontWeight: 700 }}>
-                {done ? "✓" : curr ? idx : ""}
-              </div>
-              {i < STEP_LABELS_DEFAULT.length - 1 && <div style={{ flex: 1, height: 1, maxWidth: 20, background: done ? s.brandColor : "#e6e6ec" }} />}
-            </React.Fragment>
-          );
-        })}
-      </div>
-      <div style={{ padding: "10px 12px 16px" }}>
-        <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e6e6ec", boxShadow: "0 2px 10px rgba(15,17,23,0.05)", padding: "16px 18px" }}>
+      <div style={{ padding: "16px 14px 18px" }}>
+        <div style={{
+          background: "#fff",
+          borderRadius: 14,
+          border: "1px solid #eef0f4",
+          padding: "18px 20px",
+          boxShadow: "0 1px 2px rgba(15,17,23,0.03)",
+        }}>
           <StepContent s={s} step={step} />
         </div>
-        <div style={{ textAlign: "center", fontSize: 10.5, color: "#aaa", marginTop: 10 }}>
-          🔒 {s.labelPoweredBy || "Secured by ReturnFlow"}
+        <div style={{ textAlign: "center", fontSize: 10, color: "#cbd5e1", marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+          <span>🔒</span> {s.labelPoweredBy || "Secured by ReturnFlow"}
         </div>
       </div>
     </div>

@@ -653,7 +653,11 @@ export default function PortalPage() {
     }, { method: 'POST' });
   };
 
-  const isSidebar = (settings?.portalLayout || 'classic') === 'sidebar';
+  const layout    = settings?.portalLayout || 'classic';
+  const isSidebar = layout === 'sidebar';
+  const isMinimal = layout === 'minimal';
+  const isBold    = layout === 'bold';
+  const isCompact = layout === 'compact';
 
   const stepperEl = (
     <Stepper steps={STEPS} current={stepperCurrent} onJump={(i: number) => {
@@ -665,13 +669,55 @@ export default function PortalPage() {
     }} />
   );
 
+  const minimalProgressEl = (
+    <div className="mt-2">
+      <div className="flex justify-between items-center mb-2">
+        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#0f1117]">
+          Step {Math.min(stepperCurrent, STEPS.length)} <span className="text-[#cbd5e1]"> / {STEPS.length}</span>
+        </span>
+        <span className="text-[11px] text-[#94a3b8] font-medium">
+          {STEPS[Math.min(stepperCurrent, STEPS.length) - 1]}
+        </span>
+      </div>
+      <div className="h-[3px] rounded-full overflow-hidden" style={{ background: '#eef0f4' }}>
+        <div className="h-full rounded-full transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
+             style={{
+               width: `${((Math.max(1, Math.min(stepperCurrent, STEPS.length)) - 1) / (STEPS.length - 1)) * 100}%`,
+               background: 'linear-gradient(90deg, var(--brand), color-mix(in srgb, var(--brand) 65%, white))',
+             }} />
+      </div>
+    </div>
+  );
+
+  const topEl = isSidebar ? null
+              : isMinimal ? minimalProgressEl
+              : isCompact ? null
+              : stepperEl;
+
+  const cardClass = isMinimal
+    ? "mt-6 animate-slideUp"
+    : isCompact
+      ? "bg-white rounded-[14px] border border-[#eef0f4] p-5 sm:p-6 mt-4 animate-slideUp"
+      : isBold
+        ? "bg-white rounded-[20px] p-6 sm:p-8 mt-6 animate-slideUp"
+        : "bg-white rounded-[18px] border border-[#eef0f4] p-6 sm:p-8 mt-6 animate-slideUp";
+
+  const cardStyle: React.CSSProperties = isMinimal
+    ? {}
+    : isCompact
+      ? { boxShadow: '0 1px 2px rgba(15,17,23,0.04)' }
+      : isBold
+        ? { boxShadow: '0 24px 48px -16px color-mix(in srgb, var(--brand) 22%, transparent), 0 4px 12px -4px rgba(15,17,23,0.08)', border: '1px solid rgba(15,17,23,0.04)' }
+        : { boxShadow: '0 1px 2px rgba(15,17,23,0.04), 0 10px 28px -10px rgba(15,17,23,0.10)' };
+
   return (
     <>
     <PortalShell settings={settings} shop={shop} steps={STEPS} stepperCurrent={stepperCurrent}>
-      {!isSidebar && stepperEl}
+      {topEl}
 
       <div key={step}
-           className="bg-white rounded-2xl border border-[#e6e6ec] shadow-[0_4px_24px_rgba(15,17,23,0.06)] p-6 sm:p-8 mt-6 animate-slideUp">
+           className={cardClass}
+           style={cardStyle}>
         {step === 1 && (
           <StepFindOrder orderNum={orderNum} setOrderNum={setOrderNum} email={email} setEmail={setEmail}
                          onNext={handleFindOrder} canContinue={canContinue[1]} isLoading={fetcher.state !== 'idle'}
@@ -712,12 +758,18 @@ export default function PortalPage() {
         )}
       </div>
 
-      <div className="text-center text-[12px] text-[#888] mt-6">
-        Need help? Email <a className="underline cursor-pointer" style={{ color: 'var(--brand)' }}>{settings?.footerContact || `support@${shop}`}</a>
-        <div className="mt-1.5 flex items-center justify-center gap-1.5 text-[11px] text-[#aaa]">
-          <Icon name="Lock" size={11} /> {settings?.labelPoweredBy || 'Secured by ReturnFlow'}
+      {(isMinimal || isSidebar) ? null : isCompact ? (
+        <div className="text-center text-[11px] text-[#cbd5e1] mt-3 flex items-center justify-center gap-1.5">
+          <Icon name="Lock" size={10} /> {settings?.labelPoweredBy || 'Secured by ReturnFlow'}
         </div>
-      </div>
+      ) : (
+        <div className="text-center text-[12px] text-[#94a3b8] mt-5">
+          Need help? <a className="underline cursor-pointer font-medium" style={{ color: 'var(--brand)' }}>{settings?.footerContact || `support@${shop}`}</a>
+          <div className="mt-1.5 flex items-center justify-center gap-1.5 text-[11px] text-[#cbd5e1]">
+            <Icon name="Lock" size={11} /> {settings?.labelPoweredBy || 'Secured by ReturnFlow'}
+          </div>
+        </div>
+      )}
     </PortalShell>
     {chatEnabled && (
       <ChatWidget
@@ -743,7 +795,7 @@ function PortalShell({ children, settings, shop, steps, stepperCurrent }: {
   if (layout === 'minimal') return <ShellMinimal settings={settings} shop={shop} style={root}>{children}</ShellMinimal>;
   if (layout === 'bold')    return <ShellBold    settings={settings} shop={shop} style={root}>{children}</ShellBold>;
   if (layout === 'sidebar') return <ShellSidebar settings={settings} shop={shop} style={root} steps={steps} stepperCurrent={stepperCurrent}>{children}</ShellSidebar>;
-  if (layout === 'compact') return <ShellCompact settings={settings} shop={shop} style={root}>{children}</ShellCompact>;
+  if (layout === 'compact') return <ShellCompact settings={settings} shop={shop} style={root} steps={steps} stepperCurrent={stepperCurrent}>{children}</ShellCompact>;
   return <ShellClassic settings={settings} shop={shop} style={root}>{children}</ShellClassic>;
 }
 
@@ -751,27 +803,34 @@ function ShellClassic({ children, settings, shop, style }: any) {
   const storeName = settings.portalStoreName || shop.split('.')[0];
   const headerBg  = settings.bannerColor || '#ffffff';
   return (
-    <div className="min-h-screen w-full font-sans" style={{ background: '#F8FAFC', color: '#0f1117', ...style }}>
-      <header style={{ background: headerBg, borderBottom: '1px solid #e6e6ec' }}>
+    <div className="min-h-screen w-full font-sans" style={{ background: '#F7F8FB', color: '#0f1117', ...style }}>
+      <header className="relative" style={{ background: headerBg, borderBottom: '1px solid #eef0f4' }}>
         <div className="max-w-3xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             {settings.logoUrl ? (
               <img src={settings.logoUrl} alt="Logo" className="h-9 w-auto object-contain" />
             ) : (
-              <div className="w-9 h-9 rounded-md grid place-content-center text-white font-bold"
-                   style={{ background: 'var(--brand)' }}>
+              <div className="w-10 h-10 rounded-[10px] grid place-content-center font-extrabold text-[15px]"
+                   style={{
+                     background: '#fff',
+                     color: 'var(--brand)',
+                     boxShadow: '0 0 0 1px color-mix(in srgb, var(--brand) 22%, transparent), 0 6px 18px -6px color-mix(in srgb, var(--brand) 45%, transparent)',
+                   }}>
                 {storeName.charAt(0).toUpperCase()}
               </div>
             )}
             <div>
-              <div className="text-[15px] font-semibold leading-tight">{storeName}</div>
-              <div className="text-[11.5px] text-[#888]">Return Center</div>
+              <div className="text-[15px] font-bold leading-tight tracking-[-0.01em]">{storeName}</div>
+              <div className="text-[10px] uppercase tracking-[0.1em] font-semibold text-[#94a3b8] mt-0.5">Return Center</div>
             </div>
           </div>
-          <a href={`https://${shop}`} className="text-[12.5px] text-[#666] hover:text-[#111] flex items-center gap-1.5">
+          <a href={`https://${shop}`}
+             className="text-[12.5px] text-[#475569] hover:text-[#0f1117] flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[rgba(15,23,42,0.04)] hover:bg-[rgba(15,23,42,0.07)] transition-colors">
             <Icon name="ArrowLeft" size={13} /> {settings.labelBackToStore || 'Back to store'}
           </a>
         </div>
+        <div className="absolute left-0 right-0 -bottom-px h-px"
+             style={{ background: 'linear-gradient(90deg, transparent, var(--brand), transparent)', opacity: 0.55 }} />
       </header>
       <main className="max-w-3xl mx-auto px-5 sm:px-8 py-10">{children}</main>
     </div>
@@ -782,22 +841,22 @@ function ShellMinimal({ children, settings, shop, style }: any) {
   const storeName = settings.portalStoreName || shop.split('.')[0];
   return (
     <div className="min-h-screen w-full font-sans" style={{ background: '#fff', color: '#0f1117', ...style }}>
-      <div style={{ height: 3, background: 'var(--brand)' }} />
-      <div className="max-w-2xl mx-auto px-5 sm:px-8">
-        <div className="flex items-center justify-between py-4">
+      <div style={{ height: 2, background: 'linear-gradient(90deg, var(--brand), color-mix(in srgb, var(--brand) 35%, transparent), transparent)' }} />
+      <div className="max-w-xl mx-auto px-5 sm:px-8">
+        <div className="flex items-center justify-between pt-6 pb-3">
           <div className="flex items-center gap-2.5">
             {settings.logoUrl ? (
               <img src={settings.logoUrl} alt="Logo" className="h-7 w-auto object-contain" />
             ) : (
-              <span className="text-[15px] font-bold">{storeName}</span>
+              <span className="text-[16px] font-bold tracking-[-0.025em]">{storeName}</span>
             )}
           </div>
-          <a href={`https://${shop}`} className="text-[12px] text-[#999] hover:text-[#111] flex items-center gap-1">
+          <a href={`https://${shop}`} className="text-[12px] text-[#94a3b8] hover:text-[#0f1117] flex items-center gap-1 transition-colors">
             <Icon name="ArrowLeft" size={12} /> {settings.labelBackToStore || 'Back to store'}
           </a>
         </div>
         <main className="pb-10">{children}</main>
-        <div className="text-center text-[11px] text-[#aaa] pb-8 flex items-center justify-center gap-1">
+        <div className="text-center text-[11px] text-[#cbd5e1] pb-8 flex items-center justify-center gap-1">
           <Icon name="Lock" size={10} /> {settings.labelPoweredBy || 'Secured by ReturnFlow'}
         </div>
       </div>
@@ -808,38 +867,46 @@ function ShellMinimal({ children, settings, shop, style }: any) {
 function ShellBold({ children, settings, shop, style }: any) {
   const storeName = settings.portalStoreName || shop.split('.')[0];
   return (
-    <div className="min-h-screen w-full font-sans" style={{ background: '#F8FAFC', color: '#0f1117', ...style }}>
-      <div style={{ background: 'var(--brand)', padding: '20px 24px 36px' }}>
-        <div className="max-w-3xl mx-auto">
-          <div className="flex items-center justify-between mb-4">
+    <div className="min-h-screen w-full font-sans" style={{ background: '#F7F8FB', color: '#0f1117', ...style }}>
+      <div className="relative overflow-hidden"
+           style={{
+             background: 'linear-gradient(135deg, var(--brand) 0%, color-mix(in srgb, var(--brand) 75%, #000) 100%)',
+             padding: '24px 24px 52px',
+           }}>
+        {/* decorative bokeh */}
+        <div className="absolute pointer-events-none"
+             style={{ top: -80, right: -60, width: 260, height: 260, borderRadius: '50%', background: 'rgba(255,255,255,0.10)', filter: 'blur(20px)' }} />
+        <div className="absolute pointer-events-none"
+             style={{ bottom: -70, left: -50, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', filter: 'blur(12px)' }} />
+        <div className="relative max-w-3xl mx-auto">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               {settings.logoUrl ? (
                 <img src={settings.logoUrl} alt="Logo" className="h-8 w-auto object-contain brightness-[10]" />
               ) : (
-                <div className="w-9 h-9 rounded-md grid place-content-center font-bold text-[16px]"
-                     style={{ background: 'rgba(255,255,255,0.2)', color: '#fff' }}>
+                <div className="w-10 h-10 rounded-[10px] grid place-content-center font-extrabold text-[15px] text-white"
+                     style={{
+                       background: 'rgba(255,255,255,0.18)',
+                       boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.25), 0 4px 14px -2px rgba(0,0,0,0.18)',
+                     }}>
                   {storeName.charAt(0).toUpperCase()}
                 </div>
               )}
               <div>
-                <div className="text-[16px] font-bold text-white leading-tight">{storeName}</div>
-                <div className="text-[11px] text-white/60">Return Center</div>
+                <div className="text-[16px] font-bold text-white leading-tight tracking-[-0.02em]">{storeName}</div>
+                <div className="text-[10px] uppercase tracking-[0.1em] font-semibold text-white/70 mt-0.5">Return Center</div>
               </div>
             </div>
-            <a href={`https://${shop}`} className="text-[12px] text-white/70 hover:text-white flex items-center gap-1.5">
+            <a href={`https://${shop}`}
+               className="text-[12px] text-white/85 hover:text-white flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-colors"
+               style={{ background: 'rgba(255,255,255,0.14)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)' }}>
               <Icon name="ArrowLeft" size={12} /> {settings.labelBackToStore || 'Back to store'}
             </a>
           </div>
         </div>
       </div>
-      <div className="max-w-3xl mx-auto px-5 sm:px-8" style={{ marginTop: -20 }}>
+      <div className="max-w-3xl mx-auto px-5 sm:px-8" style={{ marginTop: -28 }}>
         <main className="pb-10">{children}</main>
-        <div className="text-center text-[12px] text-[#888] pb-8">
-          Need help? <a className="underline cursor-pointer" style={{ color: 'var(--brand)' }}>{settings.footerContact || `support@${shop}`}</a>
-          <div className="mt-1.5 flex items-center justify-center gap-1.5 text-[11px] text-[#aaa]">
-            <Icon name="Lock" size={11} /> {settings.labelPoweredBy || 'Secured by ReturnFlow'}
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -849,96 +916,132 @@ function ShellSidebar({ children, settings, shop, style, steps, stepperCurrent }
   const storeName  = settings.portalStoreName || shop.split('.')[0];
   const allSteps   = steps || ['Find Order', 'Select Items', 'Reason', 'Refund Type', 'Confirm'];
   const current    = stepperCurrent || 1;
+  const currentLabel = allSteps[Math.min(current, allSteps.length) - 1];
 
   return (
     <div className="min-h-screen w-full font-sans flex" style={{ color: '#0f1117', ...style }}>
       {/* Sidebar */}
-      <aside className="w-64 shrink-0 hidden sm:flex flex-col border-r border-[#e6e6ec]" style={{ background: '#fff' }}>
+      <aside className="w-64 shrink-0 hidden sm:flex flex-col border-r border-[#eef0f4]" style={{ background: '#fff' }}>
         <div className="p-6">
-          <div className="flex items-center gap-2.5 mb-8">
+          <div className="flex items-center gap-2.5 mb-7">
             {settings.logoUrl ? (
               <img src={settings.logoUrl} alt="Logo" className="h-8 w-auto object-contain" />
             ) : (
-              <div className="w-9 h-9 rounded-md grid place-content-center text-white font-bold"
-                   style={{ background: 'var(--brand)' }}>
+              <div className="w-10 h-10 rounded-[10px] grid place-content-center text-white font-extrabold text-[15px]"
+                   style={{
+                     background: 'var(--brand)',
+                     boxShadow: '0 6px 16px -4px color-mix(in srgb, var(--brand) 55%, transparent)',
+                   }}>
                 {storeName.charAt(0).toUpperCase()}
               </div>
             )}
             <div>
-              <div className="text-[14px] font-bold leading-tight">{storeName}</div>
-              <div className="text-[11px] text-[#888]">Return Center</div>
+              <div className="text-[14.5px] font-bold leading-tight tracking-[-0.01em]">{storeName}</div>
+              <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-[#94a3b8] mt-0.5">Returns</div>
             </div>
           </div>
-          <div className="text-[11px] uppercase tracking-wide text-[#aaa] font-semibold mb-4">Your return</div>
+          <div className="text-[10px] uppercase tracking-[0.14em] text-[#94a3b8] font-bold mb-3 pl-2">Your return</div>
           {/* Vertical step list */}
-          <div className="space-y-0">
+          <div className="space-y-0.5">
             {allSteps.map((label: string, i: number) => {
               const idx  = i + 1;
               const done = idx < current;
               const curr = idx === current;
               return (
-                <div key={label} className="flex items-start gap-2.5">
-                  <div className="flex flex-col items-center">
-                    <div className="w-7 h-7 rounded-full grid place-content-center text-[11px] font-semibold shrink-0 transition"
-                         style={{ background: done ? 'var(--brand)' : curr ? '#0f1117' : '#f0f0f5', color: done || curr ? '#fff' : '#aaa' }}>
-                      {done ? <Icon name="Check" size={12} strokeWidth={3} /> : idx}
-                    </div>
-                    {i < allSteps.length - 1 && (
-                      <div className="w-px flex-1 min-h-[24px] my-1" style={{ background: done ? 'var(--brand)' : '#e6e6ec' }} />
-                    )}
+                <div key={label}
+                     className="relative flex items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors"
+                     style={{ background: curr ? 'color-mix(in srgb, var(--brand) 9%, transparent)' : 'transparent' }}>
+                  {curr && (
+                    <span className="absolute left-0 top-[22%] bottom-[22%] w-[2.5px] rounded-full"
+                          style={{ background: 'var(--brand)' }} />
+                  )}
+                  <div className="w-6 h-6 rounded-full grid place-content-center text-[10.5px] font-bold shrink-0 transition"
+                       style={{
+                         background: done ? 'var(--brand)' : curr ? '#0f1117' : '#f1f5f9',
+                         color: done || curr ? '#fff' : '#94a3b8',
+                         boxShadow: done ? '0 3px 8px -2px color-mix(in srgb, var(--brand) 45%, transparent)' : 'none',
+                       }}>
+                    {done ? <Icon name="Check" size={11} strokeWidth={3} /> : idx}
                   </div>
-                  <div className="pt-1 pb-5">
-                    <div className={`text-[13px] font-medium ${curr ? 'text-[#0f1117]' : done ? 'text-[#0f1117]' : 'text-[#aaa]'}`}>{label}</div>
-                  </div>
+                  <span className={`text-[12.5px] tracking-[-0.005em] ${curr ? 'font-bold text-[#0f1117]' : done ? 'font-medium text-[#475569]' : 'font-medium text-[#94a3b8]'}`}>{label}</span>
                 </div>
               );
             })}
           </div>
         </div>
-        <div className="mt-auto p-6 border-t border-[#e6e6ec]">
-          <a href={`https://${shop}`} className="text-[12px] text-[#666] hover:text-[#111] flex items-center gap-1.5">
+        <div className="mt-auto p-6 border-t border-[#eef0f4]">
+          <a href={`https://${shop}`} className="text-[12px] text-[#475569] hover:text-[#0f1117] flex items-center gap-1.5 transition-colors">
             <Icon name="ArrowLeft" size={12} /> {settings.labelBackToStore || 'Back to store'}
           </a>
-          <div className="mt-3 text-[11px] text-[#aaa] flex items-center gap-1">
+          <div className="mt-3 text-[11px] text-[#cbd5e1] flex items-center gap-1">
             <Icon name="Lock" size={10} /> {settings.labelPoweredBy || 'Secured by ReturnFlow'}
           </div>
         </div>
       </aside>
 
       {/* Main */}
-      <div className="flex-1 min-w-0" style={{ background: '#F8FAFC' }}>
+      <div className="flex-1 min-w-0" style={{ background: '#FAFBFD' }}>
         {/* Mobile header */}
-        <div className="sm:hidden flex items-center justify-between px-5 h-14 border-b border-[#e6e6ec] bg-white">
-          <div className="text-[14px] font-bold">{storeName}</div>
-          <a href={`https://${shop}`} className="text-[12px] text-[#666] flex items-center gap-1">
+        <div className="sm:hidden flex items-center justify-between px-5 h-14 border-b border-[#eef0f4] bg-white">
+          <div className="text-[14px] font-bold tracking-[-0.01em]">{storeName}</div>
+          <a href={`https://${shop}`} className="text-[12px] text-[#475569] flex items-center gap-1">
             <Icon name="ArrowLeft" size={12} /> {settings.labelBackToStore || 'Back to store'}
           </a>
         </div>
-        <main className="px-6 sm:px-10 py-8 max-w-2xl">{children}</main>
+        {/* Breadcrumb */}
+        <div className="hidden sm:flex items-center gap-1.5 text-[12px] text-[#94a3b8] pt-7 px-6 sm:px-10">
+          <span>Returns</span>
+          <span className="text-[#cbd5e1]">/</span>
+          <span className="text-[#0f1117] font-semibold">{currentLabel}</span>
+        </div>
+        <main className="px-6 sm:px-10 pt-4 pb-10 max-w-2xl">{children}</main>
       </div>
     </div>
   );
 }
 
-function ShellCompact({ children, settings, shop, style }: any) {
+function ShellCompact({ children, settings, shop, style, steps, stepperCurrent }: any) {
   const storeName = settings.portalStoreName || shop.split('.')[0];
-  const headerBg  = settings.bannerColor || '#fff';
+  const headerBg  = settings.bannerColor || 'rgba(255,255,255,0.85)';
+  const total     = (steps || ['Find Order','Select Items','Reason','Refund Type','Confirm']).length;
+  const current   = stepperCurrent || 1;
+  const pct       = Math.min(100, Math.max(0, (current / total) * 100));
   return (
-    <div className="min-h-screen w-full font-sans" style={{ background: '#F8FAFC', color: '#0f1117', ...style }}>
-      <header style={{ background: headerBg, borderBottom: '1px solid #e6e6ec' }}>
+    <div className="min-h-screen w-full font-sans" style={{ background: '#fff', color: '#0f1117', ...style }}>
+      {/* Top progress bar */}
+      <div className="h-[3px] relative overflow-hidden" style={{ background: '#eef0f4' }}>
+        <div className="absolute inset-y-0 left-0 transition-[width] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
+             style={{
+               width: `${pct}%`,
+               background: 'linear-gradient(90deg, var(--brand), color-mix(in srgb, var(--brand) 65%, white))',
+             }} />
+      </div>
+      <header className="sticky top-0 z-10"
+              style={{
+                background: headerBg,
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+                borderBottom: '1px solid #eef0f4',
+              }}>
         <div className="max-w-2xl mx-auto px-4 h-12 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             {settings.logoUrl ? (
               <img src={settings.logoUrl} alt="Logo" className="h-7 w-auto object-contain" />
             ) : (
-              <div className="w-7 h-7 rounded grid place-content-center text-white font-bold text-[11px]"
-                   style={{ background: 'var(--brand)' }}>
+              <div className="w-7 h-7 rounded-[7px] grid place-content-center text-white font-extrabold text-[11px]"
+                   style={{
+                     background: 'var(--brand)',
+                     boxShadow: '0 3px 8px -2px color-mix(in srgb, var(--brand) 55%, transparent)',
+                   }}>
                 {storeName.charAt(0).toUpperCase()}
               </div>
             )}
-            <span className="text-[13px] font-semibold">{storeName}</span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-[13px] font-bold tracking-[-0.01em]">{storeName}</span>
+              <span className="text-[10.5px] font-semibold text-[#94a3b8]">Step {current}/{total}</span>
+            </div>
           </div>
-          <a href={`https://${shop}`} className="text-[11.5px] text-[#888] hover:text-[#111] flex items-center gap-1">
+          <a href={`https://${shop}`} className="text-[11.5px] text-[#475569] hover:text-[#0f1117] flex items-center gap-1 transition-colors">
             <Icon name="ArrowLeft" size={11} /> {settings.labelBackToStore || 'Back to store'}
           </a>
         </div>
