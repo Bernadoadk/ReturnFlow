@@ -66,7 +66,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session, billing: shopifyBilling } = await authenticate.admin(request);
+  const { session, admin, billing: shopifyBilling } = await authenticate.admin(request);
   const shop = session.shop;
   const formData = await request.formData();
   const planId = formData.get("planId") as string;
@@ -136,21 +136,51 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (intent === "cancel") {
     try {
-      // Look up the active subscription on Shopify side, then cancel it.
-      const allPaidPlans = PLANS
-        .filter((p) => p.id !== "free")
-        .flatMap((p) => (p.annualName ? [p.name, p.annualName] : [p.name]));
-      const billingCheck = await shopifyBilling.check({
-        plans: allPaidPlans as any,
-        isTest: testMode,
-      });
-      const subscription = (billingCheck as any).appSubscriptions?.[0];
-      if (subscription) {
-        await shopifyBilling.cancel({
-          subscriptionId: subscription.id,
-          isTest: testMode,
-          prorate: true,
+      // 1. Fetch all active subscriptions directly via GraphQL to ensure we don't miss any
+      // regardless of testMode mismatch or library abstraction issues.
+      const resp = await admin.graphql(`#graphql
+        query CurrentAppSubscriptions {
+          currentAppInstallation {
+            activeSubscriptions {
+              id
+              name
+              test
+            }
+          }
+        }
+      `);
+      const json = await resp.json();
+      const activeSubs = json?.data?.currentAppInstallation?.activeSubscriptions || [];
+
+      // 2. Cancel all active paid subscriptions found
+      for (const sub of activeSubs) {
+        const cancelResp = await admin.graphql(`#graphql
+          mutation appSubscriptionCancel($id: ID!, $prorate: Boolean) {
+            appSubscriptionCancel(id: $id, prorate: $prorate) {
+              appSubscription {
+                id
+                status
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `, {
+          variables: {
+            id: sub.id,
+            prorate: true
+          }
         });
+        
+        const cancelJson = await cancelResp.json();
+        const errors = cancelJson?.data?.appSubscriptionCancel?.userErrors || [];
+        if (errors.length > 0) {
+          console.error(`[billing] Failed to cancel subscription ${sub.id}:`, errors);
+        } else {
+          console.log(`[billing] Successfully cancelled subscription ${sub.id}`);
+        }
       }
     } catch (e) {
       console.error("[billing] cancel failed (continuing to local downgrade):", e);
